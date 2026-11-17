@@ -1,0 +1,187 @@
+package my.fumui.sairitsu.library
+
+import my.fumui.sairitsu.data.LevelKey
+import my.fumui.sairitsu.data.ServerAddress
+import my.fumui.sairitsu.data.model.LevelItem
+import my.fumui.sairitsu.gameplay.HashMismatch
+import my.fumui.sairitsu.gameplay.LoadFailure
+import my.fumui.sairitsu.gameplay.ResourceCache
+import my.fumui.sairitsu.gameplay.ResourceKind
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.IOException
+
+class LibraryDownloaderTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private val server = ServerAddress.parse("sonolus.sbuga.com")!!
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private lateinit var cache: ResourceCache
+    private lateinit var library: Library
+    private lateinit var source: FakeDownloadSource
+    private lateinit var downloader: LibraryDownloader
+
+    private fun key(name: String) = LevelKey("sonolus.sbuga.com", name)
+
+    private fun level(name: String) = LevelItem(name = name, title = name)
+
+    private fun setup() {
+        cache = ResourceCache(tmp.newFolder("cache"))
+        library = Library(LibraryIndex(File(tmp.root, "library.json")), cache)
+        source = FakeDownloadSource(cache)
+        downloader = LibraryDownloader(source, library, scope)
+    }
+
+    @After
+    fun tearDown() = scope.cancel()
+
+    private suspend fun awaitState(key: LevelKey, predicate: (DownloadState?) -> Boolean) = withTimeout(5_000) {
+        while (!predicate(downloader.states.value[key])) delay(5)
+    }
+
+    @Test
+    fun downloadAddsEntryWithCoverAndPreview() = runBlocking {
+        setup()
+        var seenWhileLoading: DownloadState? = null
+        source.beforeLoad = { seenWhileLoading = downloader.states.value[key("a")] }
+        downloader.download(server, "Sbuga", level("a"))!!.join()
+        assertTrue(seenWhileLoading is DownloadState.Running)
+        assertNull(downloader.states.value[key("a")])
+        val e = library.index.get(key("a"))!!
+        assertNotNull(e.coverKey)
+        assertNotNull(e.previewKey)
+        assertEquals("Sbuga", e.serverTitle)
+    }
+
+    @Test
+    fun downloadsRunOneAtATime() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { if (it == "a") gate.await() }
+        val a = downloader.download(server, "S", level("a"))!!
+        awaitState(key("a")) { it is DownloadState.Running }
+        val b = downloader.download(server, "S", level("b"))!!
+        delay(50)
+        assertEquals(DownloadState.Queued, downloader.states.value[key("b")])
+        gate.complete(Unit)
+        a.join()
+        b.join()
+        assertEquals(setOf("a", "b"), library.index.entries.value.map { it.name }.toSet())
+    }
+
+    @Test
+    fun secondDownloadOfSameKeyIsIgnored() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        val first = downloader.download(server, "S", level("a"))!!
+        assertNull(downloader.download(server, "S", level("a")))
+        gate.complete(Unit)
+        first.join()
+        assertEquals(1, source.loads.get())
+    }
+
+    @Test
+    fun cancelLeavesNoEntryAndClearsState() = runBlocking {
+        setup()
+        source.beforeLoad = { CompletableDeferred<Unit>().await() }
+        val job = downloader.download(server, "S", level("a"))!!
+        awaitState(key("a")) { it is DownloadState.Running }
+        downloader.cancel(key("a"))
+        job.join()
+        assertNull(downloader.states.value[key("a")])
+        assertTrue(library.index.entries.value.isEmpty())
+    }
+
+    @Test
+    fun failureReportsKindAndAddsNothing() = runBlocking {
+        setup()
+        source.beforeLoad = { throw LoadFailure(ResourceKind.LEVEL_BGM, "https://x/bgm", IOException("timeout")) }
+        downloader.download(server, "S", level("a"))!!.join()
+        val state = downloader.states.value[key("a")] as DownloadState.Failed
+        assertEquals(ResourceKind.LEVEL_BGM.wireName, state.resource)
+        assertEquals("Couldn't reach the server", state.message)
+        assertTrue(library.index.entries.value.isEmpty())
+    }
+
+    @Test
+    fun previewFailureNamesThePreview() = runBlocking {
+        setup()
+        source.failSrl = "/p/" to LoadFailure(null, "https://x/p/a", IOException("timeout"))
+        downloader.download(server, "S", level("a"))!!.join()
+        val state = downloader.states.value[key("a")] as DownloadState.Failed
+        assertEquals("level.preview", state.resource)
+        assertEquals("Couldn't reach the server", state.message)
+        assertTrue(library.index.entries.value.isEmpty())
+    }
+
+    @Test
+    fun coverFailureNamesTheCover() = runBlocking {
+        setup()
+        source.failSrl = "/c/" to LoadFailure(null, "https://x/c/a", HashMismatch("k", "a", "b"))
+        downloader.download(server, "S", level("a"))!!.join()
+        val state = downloader.states.value[key("a")] as DownloadState.Failed
+        assertEquals("level.cover", state.resource)
+        assertEquals("The download was corrupted", state.message)
+    }
+
+    @Test
+    fun diskFullHasStorageMessage() = runBlocking {
+        setup()
+        source.beforeLoad = { throw LoadFailure(null, null, IOException("write failed: ENOSPC (No space left on device)")) }
+        downloader.download(server, "S", level("a"))!!.join()
+        val state = downloader.states.value[key("a")] as DownloadState.Failed
+        assertEquals("Not enough storage. Delete some levels and try again.", state.message)
+    }
+
+    @Test
+    fun retryAfterFailureWorks() = runBlocking {
+        setup()
+        source.beforeLoad = { throw LoadFailure(null, null, IOException("timeout")) }
+        downloader.download(server, "S", level("a"))!!.join()
+        source.beforeLoad = {}
+        downloader.download(server, "S", level("a"))!!.join()
+        assertNotNull(library.index.get(key("a")))
+        assertNull(downloader.states.value[key("a")])
+    }
+
+    @Test
+    fun retriesLoadOnceWhenFilesVanishBeforeAdd() = runBlocking {
+        setup()
+        var first = true
+        source.afterLoad = {
+            if (first) {
+                first = false
+                cache.delete(setOf("engine-0"))
+            }
+        }
+        downloader.download(server, "S", level("a"))!!.join()
+        assertEquals(2, source.loads.get())
+        assertNotNull(library.index.get(key("a")))
+        assertTrue(cache.has("engine-0"))
+    }
+
+    @Test
+    fun saveLoadedAddsEntry() = runBlocking {
+        setup()
+        val loaded = source.load(server, "a") {}
+        downloader.saveLoaded(server, "S", loaded)
+        assertNotNull(library.index.get(key("a"))?.coverKey)
+    }
+}

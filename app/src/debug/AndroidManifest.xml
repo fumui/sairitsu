@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- adb entry point for the PC tools: am start -n my.fumui.sairitsu/.gameplay.DebugGameplayEntry
+             with extras server, level, mode, and debug-only offline, renderTimes, outDir, renderOptions. -->
+        <activity-alias
+            android:name=".gameplay.DebugGameplayEntry"
+            android:exported="true"
+            android:targetActivity=".gameplay.GameplayActivity" />
+    </application>
+</manifest>

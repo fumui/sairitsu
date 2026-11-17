@@ -1,0 +1,6 @@
+{"func":"While","cases":[
+{"tree":{"f":"While","a":[0.0,7.0]},"result":0.0,"tol_ulp":0},
+{"tree":{"f":"Execute","a":[{"f":"While","a":[0.0,{"f":"Add","a":[1.0,1.0]}]},4.0]},"result":4.0,"tol_ulp":0},
+{"tree":{"f":"While","a":[-0.0,7.0]},"result":0.0,"tol_ulp":0},
+{"tree":{"f":"Execute","a":[{"f":"While","a":[-0.0,{"f":"Add","a":[1.0,1.0]}]},4.0]},"result":4.0,"tol_ulp":0}
+]}

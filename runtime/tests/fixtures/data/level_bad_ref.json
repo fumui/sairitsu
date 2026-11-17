@@ -1,0 +1,6 @@
+{
+  "bgmOffset": 0,
+  "entities": [
+    { "name": "a", "archetype": "Tap", "data": [{ "name": "next", "ref": "missing-entity" }] }
+  ]
+}
