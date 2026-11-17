@@ -1,0 +1,34 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [{ "name": "#NOTE_HEAD_CYAN", "id": 0 }, { "name": "Stage", "id": 1 }]
+  },
+  "effect": { "clips": [{ "name": "#PERFECT", "id": 0 }] },
+  "particle": { "effects": [{ "name": "Tap", "id": 0 }] },
+  "buckets": [
+    {
+      "sprites": [{ "id": 0, "fallbackId": 1, "x": 0, "y": 0, "w": 2, "h": 2, "rotation": 0 }],
+      "unit": "#MILLISECOND_UNIT"
+    },
+    { "sprites": [] }
+  ],
+  "archetypes": [
+    {
+      "name": "TapNote",
+      "hasInput": true,
+      "preprocess": { "index": 0, "order": 3 },
+      "spawnTime": { "index": 3 },
+      "updateParallel": { "index": 3 },
+      "imports": [{ "name": "#BEAT", "index": 0 }, { "name": "lane", "index": 1, "def": 0.1 }],
+      "someFutureField": [1, 2, 3]
+    }
+  ],
+  "updateSpawn": 3,
+  "nodes": [
+    { "value": 1.5 },
+    { "value": 0.1 },
+    { "func": "Add", "args": [0, 1] },
+    { "func": "Execute", "args": [2] }
+  ],
+  "unknownTopLevel": { "x": 1 }
+}

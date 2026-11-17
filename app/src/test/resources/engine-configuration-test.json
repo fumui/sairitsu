@@ -1,0 +1,83 @@
+{
+ "options": [
+  {
+   "type": "slider",
+   "name": "#SPEED",
+   "standard": true,
+   "advanced": true,
+   "def": 1,
+   "min": 0.5,
+   "max": 2,
+   "step": 0.05,
+   "category": "gameplay",
+   "unit": "#PERCENTAGE_UNIT"
+  },
+  {
+   "type": "slider",
+   "name": "Test speed",
+   "standard": false,
+   "advanced": false,
+   "def": 6,
+   "min": 1,
+   "max": 12,
+   "step": 0.01,
+   "category": "gameplay",
+   "scope": "TestScope"
+  },
+  {
+   "type": "slider",
+   "name": "Test alpha",
+   "standard": false,
+   "advanced": false,
+   "def": 1,
+   "min": 0,
+   "max": 1,
+   "step": 0.05,
+   "title": "Test alpha title",
+   "category": "graphics",
+   "scope": "TestScope",
+   "unit": "#PERCENTAGE_UNIT"
+  },
+  {
+   "type": "select",
+   "name": "Test choice",
+   "standard": false,
+   "advanced": false,
+   "def": 0,
+   "values": [
+    "First",
+    "Second",
+    "Third"
+   ],
+   "title": "Test choice title",
+   "category": "graphics",
+   "scope": "OtherScope"
+  },
+  {
+   "type": "toggle",
+   "name": "Test toggle",
+   "standard": false,
+   "advanced": false,
+   "def": 0,
+   "title": "Test toggle title",
+   "category": "gameplay"
+  },
+  {
+   "type": "select",
+   "name": "Test mode",
+   "standard": false,
+   "advanced": true,
+   "def": 1,
+   "values": [
+    "Alpha",
+    "Beta",
+    "Gamma"
+   ],
+   "title": "Test mode title",
+   "category": "graphics",
+   "scope": "TestScope"
+  }
+ ],
+ "ui": {},
+ "optionCategories": []
+}

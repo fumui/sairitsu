@@ -1,0 +1,17 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.kotlin/
+runtime/build/
+app/.cxx/
+tools/.venv/
+__pycache__/
+tools/device.local.toml
+tools/*.egg-info/
+.vscode/
+keystore.properties
+*.jks
+*.keystore

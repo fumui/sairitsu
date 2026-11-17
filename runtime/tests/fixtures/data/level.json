@@ -1,0 +1,8 @@
+{
+  "bgmOffset": 0.25,
+  "entities": [
+    { "archetype": "Initialization", "data": [] },
+    { "name": "a", "archetype": "Tap", "data": [{ "name": "#BEAT", "value": 4 }, { "name": "next", "ref": "b" }] },
+    { "name": "b", "archetype": "Tap", "data": [{ "name": "#BEAT", "value": 5 }, { "name": "prev", "ref": "a" }] }
+  ]
+}
