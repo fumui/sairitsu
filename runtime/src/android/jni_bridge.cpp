@@ -597,6 +597,20 @@ Java_my_fumui_sairitsu_gameplay_NativeRuntime_playState(JNIEnv* env, jobject, jl
     return result;
 }
 
+// Play: the ended run's judgment and accuracy pairs, flattened; empty while a run is live.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_my_fumui_sairitsu_gameplay_NativeRuntime_playTimings(JNIEnv* env, jobject, jlong handle) {
+    Runtime* rt = from_handle(handle);
+    std::vector<float> timings;
+    if (rt != nullptr) {
+        std::lock_guard<std::mutex> lock(rt->loop_mutex);
+        if (rt->loop) timings = rt->loop->play_timings();
+    }
+    jfloatArray result = env->NewFloatArray(jsize(timings.size()));
+    if (result != nullptr && !timings.empty()) env->SetFloatArrayRegion(result, 0, jsize(timings.size()), timings.data());
+    return result;
+}
+
 // Play: the last run's replay files (a ReplayStatus code: 0 none, 1 writing, 2 ready, 3 failed). Only the slot's short
 // lock; never waits on a write.
 extern "C" JNIEXPORT jint JNICALL

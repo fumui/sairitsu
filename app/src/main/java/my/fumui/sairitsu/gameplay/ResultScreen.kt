@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,24 +38,33 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
 import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.text.Localizer
 import my.fumui.sairitsu.ui.Cover
@@ -64,14 +75,16 @@ import java.util.Locale
 private val Backdrop = Color(0xFF0E1218)
 private val Gold = Color(0xFFFFC94D)
 private val Cyan = Color(0xFF4DD8FF)
-private val JudgmentColors = listOf(Gold, Color(0xFFFF7EB6), Color(0xFF6BD68A), Color(0xFF8A8F98))
+internal val JudgmentColors = listOf(Gold, Color(0xFFFF7EB6), Color(0xFF6BD68A), Color(0xFF8A8F98))
 private val JudgmentLabels = listOf("Perfect", "Great", "Good", "Miss")
+private val ResultTabLabels = listOf("Score", "Timing")
 
 /**
  * Play's result page, full screen over the stage: the level ([level]: cover, title, artists, rating; left out
- * when null), the grade ("Quit" for a [partial] run), the arcade score with its difference from the previous best, the
- * accuracy score and combo, and the judgments as a bar and counts. Retry and Back (the system Back too) work from the
- * first frame; the content fades in and the score counts up.
+ * when null) beside two tabs. Score has the grade ("Quit" for a [partial] run), the arcade score with its difference
+ * from the previous best, the accuracy score and combo, and the judgments as a bar and one row each. Timing has the
+ * run's [timing]; without timed hits there are no tabs, only the score. Retry and Back (the system Back too) work from
+ * the first frame; the content fades in and the score counts up.
  */
 @Composable
 fun ResultScreen(
@@ -79,6 +92,7 @@ fun ResultScreen(
     partial: Boolean,
     info: ResultInfo?,
     level: LevelItem?,
+    timing: TimingUi?,
     replaySave: ReplaySave,
     onSaveReplay: () -> Unit,
     onRetry: () -> Unit,
@@ -106,42 +120,35 @@ fun ResultScreen(
         val appear = remember { MutableTransitionState(false).apply { targetState = true } }
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp)) {
             val wide = maxWidth >= 600.dp
+            val short = isShortResult(maxHeight)
+            val pageHeight = resultPageHeight(maxHeight)
             // A bigger cover on tablets; 160 dp on a phone in landscape.
             val coverDp = (maxHeight.value * 0.4f).toInt().coerceIn(120, 280)
             AnimatedVisibility(
                 visibleState = appear,
                 enter = fadeIn(tween(250)) + slideInVertically(tween(250)) { it / 12 },
             ) {
-                if (wide && level == null) {
-                    // No level to show: the stats alone, centred.
-                    Box(Modifier.fillMaxSize().padding(bottom = 56.dp), contentAlignment = Alignment.Center) {
-                        Column(Modifier.widthIn(max = 640.dp).verticalScroll(rememberScrollState())) {
-                            Stats(result, partial, info)
-                        }
-                    }
-                } else if (wide) {
-                    // Both columns centred as one block; the stats scroll when they do not fit above the buttons.
-                    Row(
-                        Modifier.fillMaxSize().padding(bottom = 56.dp),
-                        horizontalArrangement = Arrangement.spacedBy(48.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(0.4f)) {
-                            if (level != null) LevelHeader(level, coverDp)
-                        }
-                        Column(Modifier.weight(0.6f).verticalScroll(rememberScrollState())) {
-                            Stats(result, partial, info)
-                        }
-                    }
-                } else {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 56.dp)) {
-                        if (level != null) {
+                // The level and the tabs centred as one block, above the buttons.
+                Row(
+                    Modifier.fillMaxSize().padding(bottom = 56.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (short) 32.dp else 48.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val showLevel = wide && level != null
+                    if (showLevel) {
+                        Column(Modifier.weight(0.38f).verticalScroll(rememberScrollState())) {
                             LevelHeader(level, coverDp)
-                            Spacer(Modifier.height(24.dp))
                         }
-                        Stats(result, partial, info)
                     }
+                    ResultTabs(
+                        result, partial, info, timing, short, pageHeight,
+                        if (showLevel) Modifier.weight(0.62f) else Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+                    )
                 }
+            }
+            if (!wide && level != null) {
+                // No level column here: the title takes the free space beside the buttons.
+                LevelTitle(level, Modifier.align(Alignment.BottomStart).padding(bottom = 10.dp).widthIn(max = maxWidth - 360.dp))
             }
             Row(Modifier.align(Alignment.BottomEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SaveReplayButton(replaySave, onSaveReplay)
@@ -164,6 +171,21 @@ private fun SaveReplayButton(state: ReplaySave, onSave: () -> Unit) {
         }
         else -> OutlinedButton(onClick = onSave, enabled = state == ReplaySave.Ready) { Text("Save replay") }
     }
+}
+
+/** The level's title alone, where there is no room for its cover. */
+@Composable
+private fun LevelTitle(level: LevelItem, modifier: Modifier = Modifier) {
+    val localizer = remember { Localizer(Localizer.serverLanguage(Locale.getDefault())) }
+    Text(
+        localizer.text(level.title),
+        modifier,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -193,46 +215,99 @@ private fun LevelHeader(level: LevelItem, coverDp: Int) {
     }
 }
 
+/** Whether the result page is too short to stack the grade above the score: a phone in landscape. */
+fun isShortResult(height: Dp): Boolean = height < 480.dp
+
+/** The height of a tab's page on a result page of [height], under the tabs and above the buttons. */
+fun resultPageHeight(height: Dp): Dp = (height - 56.dp).coerceAtMost(560.dp) - 56.dp
+
+/** The timing chart's height on a tab page of [pageHeight]: what the rows under it leave over. */
+fun timingChartHeight(pageHeight: Dp): Dp = (pageHeight - 112.dp).coerceIn(68.dp, 260.dp)
+
+/**
+ * The run's Score page and, when it has timed hits, its Timing page, as tabs that also follow a swipe. Score opens
+ * first. Both pages stay composed, so the score counts up only once.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ColumnScope.Stats(result: PlayResult, partial: Boolean, info: ResultInfo?) {
-    val scheme = MaterialTheme.colorScheme
-    val muted = Color.White.copy(alpha = 0.7f)
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        val (label, color) = if (partial) "Quit" to muted else result.grade.label to gradeColor(result.grade)
-        Surface(
-            color = color.copy(alpha = 0.15f),
-            border = BorderStroke(2.dp, color),
-            shape = RoundedCornerShape(10.dp),
+private fun ResultTabs(
+    result: PlayResult,
+    partial: Boolean,
+    info: ResultInfo?,
+    timing: TimingUi?,
+    short: Boolean,
+    pageHeight: Dp,
+    modifier: Modifier,
+) {
+    if (timing == null) {
+        Column(modifier.verticalScroll(rememberScrollState())) { ScorePage(result, partial, info, short, pageHeight) }
+        return
+    }
+    val pager = rememberPagerState { ResultTabLabels.size }
+    val scope = rememberCoroutineScope()
+    Column(modifier.height(pageHeight + 56.dp)) {
+        PrimaryTabRow(
+            selectedTabIndex = pager.currentPage,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
         ) {
-            Text(
-                label.uppercase(Locale.ROOT),
-                Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Black,
-                color = color,
-            )
+            ResultTabLabels.forEachIndexed { i, label ->
+                Tab(
+                    selected = pager.currentPage == i,
+                    onClick = { scope.launch { pager.animateScrollToPage(i) } },
+                    text = { Text(label) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = Color.White.copy(alpha = 0.7f),
+                )
+            }
         }
-        if (info?.isNewBest == true && !partial) {
-            Text("NEW BEST", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Gold)
+        HorizontalPager(
+            pager,
+            Modifier.fillMaxWidth().weight(1f),
+            beyondViewportPageCount = 1,
+            verticalAlignment = Alignment.Top,
+        ) { page ->
+            // Clipped so a glyph at one page's edge does not show on the page beside it.
+            Column(Modifier.fillMaxSize().clipToBounds().verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                if (page == 0) {
+                    ScorePage(result, partial, info, short, pageHeight)
+                } else {
+                    TimingSection(timing, timingChartHeight(pageHeight))
+                }
+            }
         }
     }
-    Spacer(Modifier.height(16.dp))
-    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        val shown = remember(result) { Animatable(0f) }
-        LaunchedEffect(result) { shown.animateTo(result.arcadeScore.toFloat(), tween(600)) }
-        Text(
-            scoreText(shown.value.toInt()),
-            style = MaterialTheme.typography.displaySmall.copy(fontFeatureSettings = "tnum"),
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-        )
-        bestDelta(result, info?.previousBest, partial)?.let { delta ->
-            Text(
-                "$delta vs best",
-                Modifier.padding(bottom = 6.dp),
-                style = MaterialTheme.typography.titleMedium,
-                color = if (delta.startsWith("+")) scheme.primary else muted,
-            )
+}
+
+/** The grade, the scores and the judgments. Where height is [short], the grade and the score share a line. */
+@Composable
+private fun ColumnScope.ScorePage(result: PlayResult, partial: Boolean, info: ResultInfo?, short: Boolean, pageHeight: Dp) {
+    val muted = Color.White.copy(alpha = 0.7f)
+    val roomy = !short || pageHeight >= 240.dp
+    val gap = if (!short) 16.dp else if (roomy) 12.dp else 8.dp
+    val rowGap = if (roomy) 2.dp else 0.dp
+    val isNewBest = info?.isNewBest == true && !partial
+    val best = info?.best?.takeIf { !info.isNewBest }
+    val delta = bestDelta(result, info?.previousBest, partial)
+    if (short) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GradeBadge(result, partial, MaterialTheme.typography.titleLarge)
+            ScoreText(result)
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                if (isNewBest) NewBestText(MaterialTheme.typography.titleSmall)
+                if (best != null) BestText(best)
+                if (delta != null) DeltaText(delta, MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GradeBadge(result, partial, MaterialTheme.typography.headlineSmall)
+            if (isNewBest) NewBestText(MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.height(gap))
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            ScoreText(result)
+            if (delta != null) DeltaText(delta, MaterialTheme.typography.titleMedium, Modifier.padding(bottom = 6.dp))
         }
     }
     Text(
@@ -240,32 +315,83 @@ private fun ColumnScope.Stats(result: PlayResult, partial: Boolean, info: Result
         style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
         color = muted,
     )
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(gap))
     JudgmentBar(result.judgmentFractions())
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(gap * 0.75f))
     val counts = listOf(result.perfect, result.great, result.good, result.miss)
-    for (rowStart in listOf(0, 2)) {
-        Row(Modifier.fillMaxWidth()) {
-            for (i in rowStart..rowStart + 1) {
-                Row(Modifier.weight(1f).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(JudgmentColors[i]))
-                    Spacer(Modifier.width(8.dp))
-                    Text(JudgmentLabels[i], Modifier.width(64.dp), style = MaterialTheme.typography.bodyLarge, color = muted)
-                    Text(
-                        "${counts[i]}  ${result.percent(counts[i])}",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                    )
-                }
-            }
+    val figures = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum", textAlign = TextAlign.End)
+    counts.forEachIndexed { i, count ->
+        Row(Modifier.fillMaxWidth().padding(vertical = rowGap), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(JudgmentColors[i]))
+            Spacer(Modifier.width(8.dp))
+            Text(JudgmentLabels[i], Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = muted)
+            Text("$count", Modifier.width(64.dp), style = figures, fontWeight = FontWeight.Medium, color = Color.White)
+            Text(result.percent(count), Modifier.width(72.dp), style = figures, fontWeight = FontWeight.Medium, color = Color.White)
         }
     }
-    val best = info?.best
-    if (best != null && !info.isNewBest) {
+    if (!short && best != null) {
         Spacer(Modifier.height(8.dp))
-        Text("Best ${best.grade.label} ${best.arcadeText()}", style = MaterialTheme.typography.bodyMedium, color = muted)
+        BestText(best)
     }
+}
+
+@Composable
+private fun GradeBadge(result: PlayResult, partial: Boolean, style: TextStyle) {
+    val (label, color) = if (partial) "Quit" to Color.White.copy(alpha = 0.7f) else result.grade.label to gradeColor(result.grade)
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        border = BorderStroke(2.dp, color),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            label.uppercase(Locale.ROOT),
+            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            style = style,
+            fontWeight = FontWeight.Black,
+            color = color,
+        )
+    }
+}
+
+/** The arcade score, counting up from 0 once per run. */
+@Composable
+private fun ScoreText(result: PlayResult) {
+    val shown = remember(result) { Animatable(0f) }
+    LaunchedEffect(result) { shown.animateTo(result.arcadeScore.toFloat(), tween(600)) }
+    Text(
+        scoreText(shown.value.toInt()),
+        style = MaterialTheme.typography.displaySmall.copy(fontFeatureSettings = "tnum"),
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+    )
+}
+
+@Composable
+private fun NewBestText(style: TextStyle) {
+    Text("NEW BEST", style = style, fontWeight = FontWeight.Bold, color = Gold, maxLines = 1)
+}
+
+/** The stored best, when this run did not become it. */
+@Composable
+private fun BestText(best: PlayResult) {
+    Text(
+        "Best ${best.grade.label} ${best.arcadeText()}",
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color.White.copy(alpha = 0.7f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun DeltaText(delta: String, style: TextStyle, modifier: Modifier = Modifier) {
+    Text(
+        "$delta vs best",
+        modifier,
+        style = style,
+        color = if (delta.startsWith("+")) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
+        maxLines = 1,
+    )
 }
 
 @Composable

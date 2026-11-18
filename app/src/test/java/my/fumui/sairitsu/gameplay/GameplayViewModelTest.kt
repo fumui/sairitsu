@@ -2,12 +2,18 @@ package my.fumui.sairitsu.gameplay
 
 import android.graphics.SurfaceTexture
 import android.view.Surface
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import my.fumui.sairitsu.data.ServerAddress
 import my.fumui.sairitsu.data.ServerApiException
 import my.fumui.sairitsu.data.model.LevelItem
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -1284,9 +1290,266 @@ class GameplayViewModelTest {
         assertEquals(emptyList<String>(), runtime.watchCalls)
     }
 
+    @Test
+    fun playStartsWithTheSumOfTheScopes() = test {
+        val store = SettingsStore(MemoryPreferences())
+        store.saveInputOffset(OffsetScope.Global, server.linkAddress, "lvl", 0.01f)
+        store.saveInputOffset(OffsetScope.Server, server.linkAddress, "lvl", 0.003f)
+        store.saveInputOffset(OffsetScope.Level, server.linkAddress, "lvl", -0.002f)
+        val vm = GameplayViewModel(server, "lvl", fetcher, runtime, dispatcher, mode = GameplayMode.Play, store = store)
+        advanceUntilIdle()
+        vm.surfaceChanged(surfaces[0], 3200, 2136)
+        advanceUntilIdle()
+        assertEquals(0.011f, runtime.startSettings.last()[NativeSettings.INPUT_OFFSET], 0f)
+    }
+
+    @Test
+    fun levelOptionsShowAndSaveEachScope() = test {
+        val store = SettingsStore(MemoryPreferences())
+        store.saveInputOffset(OffsetScope.Server, server.linkAddress, "lvl", 0.003f)
+        val vm = GameplayViewModel(
+            server, "lvl", fetcher, runtime, dispatcher, store = store, optionsOnly = true, io = dispatcher,
+        )
+        advanceUntilIdle()
+        assertEquals(0.003f, (vm.state.value as GameplayUiState.Options).offsets.server, 0f)
+        vm.setInputOffset(OffsetScope.Level, -0.004f)
+        advanceUntilIdle()
+        assertEquals(-0.004f, (vm.state.value as GameplayUiState.Options).offsets.level, 0f)
+        assertEquals(-0.004f, store.inputOffsets(server.linkAddress, "lvl").first().level, 0f)
+    }
+
+    @Test
+    fun globalSliderUpdatesTheOffsetsShown() = test {
+        val store = SettingsStore(MemoryPreferences())
+        val vm = GameplayViewModel(
+            server, "lvl", fetcher, runtime, dispatcher, store = store, optionsOnly = true, io = dispatcher,
+        )
+        advanceUntilIdle()
+        val options = vm.state.value as GameplayUiState.Options
+        vm.setSettings(options.settings.copy(inputOffset = 0.006f))
+        advanceUntilIdle()
+        assertEquals(0.006f, (vm.state.value as GameplayUiState.Options).offsets.global, 0f)
+    }
+
+    /** 20 Perfects [errorMs] off, as [LevelRuntime.playTimings] reports them. */
+    private fun timings(errorMs: Float = -5f) = FloatArray(40) { if (it % 2 == 0) 1f else errorMs / 1000f }
+
+    /** A Play run on [store] that has just reached the result screen with [timings]. */
+    private fun TestScope.endedRun(
+        store: SettingsStore,
+        timingValues: FloatArray = timings(),
+        partial: Boolean = false,
+    ): GameplayViewModel {
+        val vm = GameplayViewModel(
+            server, "lvl", fetcher, runtime, dispatcher, mode = GameplayMode.Play, store = store, io = dispatcher,
+        )
+        advanceUntilIdle()
+        vm.surfaceChanged(surfaces[0], 3200, 2136)
+        advanceUntilIdle()
+        runtime.playTimingValues = timingValues
+        runtime.playValues = FloatArray(PlayState.FLOATS).also {
+            it[PlayState.STATE] = PlayState.ENDED
+            it[PlayState.PARTIAL] = if (partial) 1f else 0f
+        }
+        vm.pollPlay()
+        advanceUntilIdle()
+        return vm
+    }
+
+    private suspend fun SettingsStore.stored() = inputOffsets(server.linkAddress, "lvl").first()
+
+    @Test
+    fun endedRunExposesTiming() = test {
+        val vm = endedRun(SettingsStore(MemoryPreferences()))
+        assertEquals(20, vm.timing.value!!.count)
+    }
+
+    @Test
+    fun dialogListsEachScopeFromTheStore() = test {
+        val store = SettingsStore(MemoryPreferences())
+        store.saveInputOffset(OffsetScope.Level, server.linkAddress, "lvl", 0.001f)
+        store.saveInputOffset(OffsetScope.Server, server.linkAddress, "lvl", 0.002f)
+        store.saveInputOffset(OffsetScope.Global, server.linkAddress, "lvl", 0.003f)
+        val vm = endedRun(store)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        val dialog = vm.offsetDialog.value!!
+        assertEquals(-5, dialog.correctionMs)
+        assertEquals(
+            listOf(
+                OffsetChoice(OffsetScope.Level, 0.001f, -0.004f),
+                OffsetChoice(OffsetScope.Server, 0.002f, -0.003f),
+                OffsetChoice(OffsetScope.Global, 0.003f, -0.002f),
+            ),
+            dialog.choices,
+        )
+    }
+
+    @Test
+    fun applySavesOnlyTheChosenScope() = test {
+        val store = SettingsStore(MemoryPreferences())
+        val vm = endedRun(store)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Server)
+        advanceUntilIdle()
+        assertEquals(InputOffsets(server = -0.005f), store.stored())
+        assertEquals(OffsetApply.Applied, vm.offsetApply.value)
+        assertEquals(null, vm.offsetDialog.value)
+    }
+
+    @Test
+    fun applyWorksOncePerRun() = test {
+        val store = SettingsStore(MemoryPreferences())
+        val vm = endedRun(store)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Server)
+        advanceUntilIdle()
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Server)
+        advanceUntilIdle()
+        assertEquals(null, vm.offsetDialog.value)
+        assertEquals(InputOffsets(server = -0.005f), store.stored())
+    }
+
+    @Test
+    fun retryAfterApplyStartsWithTheNewOffset() = test {
+        val memory = MemoryPreferences()
+        val vm = endedRun(SettingsStore(memory))
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        val starts = runtime.startSettings.size
+        memory.writeGate = CompletableDeferred()
+        vm.applyOffset(OffsetScope.Level)
+        vm.retryFromResult()
+        advanceUntilIdle()
+        assertEquals(starts, runtime.startSettings.size)
+        memory.writeGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(starts + 1, runtime.startSettings.size)
+        assertEquals(-0.005f, runtime.startSettings.last()[NativeSettings.INPUT_OFFSET], 0f)
+    }
+
+    @Test
+    fun backDuringApplyStillSaves() = test {
+        val memory = MemoryPreferences()
+        val store = SettingsStore(memory)
+        val viewModels = ViewModelStore()
+        val provider = ViewModelProvider.create(
+            viewModels,
+            viewModelFactory {
+                initializer {
+                    GameplayViewModel(
+                        server, "lvl", fetcher, runtime, dispatcher, mode = GameplayMode.Play, store = store, io = dispatcher,
+                    )
+                }
+            },
+        )
+        val vm = provider[GameplayViewModel::class]
+        advanceUntilIdle()
+        vm.surfaceChanged(surfaces[0], 3200, 2136)
+        advanceUntilIdle()
+        runtime.playTimingValues = timings()
+        runtime.playValues = FloatArray(PlayState.FLOATS).also { it[PlayState.STATE] = PlayState.ENDED }
+        vm.pollPlay()
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Level)
+        viewModels.clear()
+        advanceUntilIdle()
+        assertEquals(InputOffsets(level = -0.005f), store.stored())
+    }
+
+    @Test
+    fun failedSaveAllowsAnotherTry() = test {
+        val memory = MemoryPreferences()
+        val store = SettingsStore(memory)
+        val vm = endedRun(store)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        memory.failWrites = true
+        vm.applyOffset(OffsetScope.Level)
+        advanceUntilIdle()
+        assertEquals(OffsetApply.Idle, vm.offsetApply.value)
+        assertEquals("Couldn't save the input offset", vm.message.value)
+        memory.failWrites = false
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Level)
+        advanceUntilIdle()
+        assertEquals(OffsetApply.Applied, vm.offsetApply.value)
+        assertEquals(InputOffsets(level = -0.005f), store.stored())
+    }
+
+    @Test
+    fun newRunResetsApply() = test {
+        val vm = endedRun(SettingsStore(MemoryPreferences()))
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Level)
+        advanceUntilIdle()
+        vm.retryFromResult()
+        advanceUntilIdle()
+        assertEquals(OffsetApply.Idle, vm.offsetApply.value)
+        assertEquals(null, vm.timing.value)
+    }
+
+    @Test
+    fun partialRunCanApply() = test {
+        val store = SettingsStore(MemoryPreferences())
+        val vm = endedRun(store, partial = true)
+        assertTrue(vm.timing.value!!.canApply)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        vm.applyOffset(OffsetScope.Global)
+        advanceUntilIdle()
+        assertEquals(InputOffsets(global = -0.005f), store.stored())
+    }
+
+    @Test
+    fun quitBeforeTheFirstTimedHitHasNoTiming() = test {
+        val vm = endedRun(SettingsStore(MemoryPreferences()), timingValues = FloatArray(0), partial = true)
+        assertEquals(null, vm.timing.value)
+        vm.openOffsetDialog()
+        advanceUntilIdle()
+        assertEquals(null, vm.offsetDialog.value)
+    }
+
+    @Test
+    fun debugSettingsOverrideCannotEditTheOffset() = test {
+        val vm = GameplayViewModel(
+            server, "lvl", fetcher, runtime, dispatcher, mode = GameplayMode.Play,
+            settingsOverride = NativeSettings.defaults(), store = SettingsStore(MemoryPreferences()),
+        )
+        advanceUntilIdle()
+        assertEquals(false, vm.canEditOffset)
+    }
+
+    /** DataStore's file store cannot rename over an open file on Windows, so the tests keep preferences in memory. */
+    private class MemoryPreferences : DataStore<Preferences> {
+        private val state = MutableStateFlow(emptyPreferences())
+        override val data: Flow<Preferences> = state
+
+        /** Writes wait for this while it is set. */
+        var writeGate: CompletableDeferred<Unit>? = null
+        var failWrites = false
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            writeGate?.await()
+            if (failWrites) throw IOException("disk full")
+            return transform(state.value).also { state.value = it }
+        }
+    }
+
     private inner class FakeRuntime : LevelRuntime {
         var playValues = FloatArray(PlayState.FLOATS)
         var playHaptics = IntArray(0)
+        val startSettings = mutableListOf<FloatArray>()
+        var playTimingValues = FloatArray(0)
+
+        override fun playTimings(): FloatArray = playTimingValues
 
         override fun playState(out: FloatArray): IntArray {
             playValues.copyInto(out)
@@ -1369,6 +1632,7 @@ class GameplayViewModelTest {
         ): String? {
             calls += "start ${surfaces.indexOf(surface)} ${mode.wire}"
             startOptions += options.toList()
+            startSettings += settings
             replayIns += replayIn
             replayOuts += replayOut
             return startError

@@ -11,6 +11,7 @@ import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.gameplay.model.MissingResource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -38,11 +39,15 @@ sealed interface GameplayUiState {
 
     data class Ready(val summary: String) : GameplayUiState
 
-    /** The "Level options" screen: [options] with their [values] (by name; defaults where unsaved) and the app [settings]. */
+    /**
+     * The "Level options" screen: [options] with their [values] (by name; defaults where unsaved), the app [settings]
+     * and this level's input [offsets].
+     */
     data class Options(
         val options: List<EngineOption>,
         val values: Map<String, Float>,
         val settings: AppSettings,
+        val offsets: InputOffsets = InputOffsets(),
     ) : GameplayUiState
 
     /** A callback fault stopped the level (it stays on its last frame); the screen shows [message] and Back. */
@@ -60,6 +65,15 @@ sealed interface GameplayUiState {
  * the [previousBest] stored before this run was recorded (what the score is compared with).
  */
 data class ResultInfo(val best: PlayResult?, val isNewBest: Boolean, val previousBest: PlayResult? = null)
+
+/** The result screen's Apply button: a run's correction can be applied once. */
+enum class OffsetApply { Idle, Saving, Applied }
+
+/** One row of the Apply dialog: [scope]'s [current] input offset and the [suggested] one, in seconds. */
+data class OffsetChoice(val scope: OffsetScope, val current: Float, val suggested: Float)
+
+/** The Apply dialog: the run's correction and a choice per scope, narrowest first. */
+data class OffsetDialog(val correctionMs: Int, val choices: List<OffsetChoice>)
 
 /** What the Play layer above the stage shows while a run is [GameplayUiState.Ready]. */
 sealed interface PlayUi {
@@ -137,6 +151,9 @@ class GameplayViewModel(
     private var engineOptions: List<EngineOption> = emptyList()
     private var savedOptions: Map<String, Float> = emptyMap()
     private var appSettings = AppSettings()
+
+    @Volatile
+    private var inputOffsets = InputOffsets()
     private var lastSummary: String? = null
 
     /** A surface at one size: the level restarts when either changes, so Runtime Environment's aspect is right. */
@@ -224,7 +241,8 @@ class GameplayViewModel(
                     ?: optionBlock(engineOptions, savedOptions, watch = mode == GameplayMode.Watch)
                 val replayOut = if (mode == GameplayMode.Play) replayTemp?.base else null
                 val replayIn = replay?.takeIf { replayOptions != null }?.let { replays?.replayFile(it.id) }
-                runtime.start(target.surface, mode, options, settingsOverride ?: appSettings.toNative(), replayOut, replayIn)
+                val settings = settingsOverride ?: appSettings.copy(inputOffset = inputOffsets.total).toNative()
+                runtime.start(target.surface, mode, options, settings, replayOut, replayIn)
                     .also {
                         if (it == null) {
                             running = target
@@ -414,6 +432,9 @@ class GameplayViewModel(
                 Log.i(TAG, "Play of $level ${if (partial) "quit" else "ended"}: $result")
                 _playUi.value = PlayUi.Running
                 _resultInfo.value = null
+                _timing.value = TimingStats.fromNative(runtime.playTimings())
+                _offsetDialog.value = null
+                _offsetApply.value = OffsetApply.Idle
                 _state.value = GameplayUiState.Ended(result, partial)
                 val at = now()
                 runAt = at
@@ -435,6 +456,69 @@ class GameplayViewModel(
             else -> _playUi.value = PlayUi.Running
         }
         return haptics
+    }
+
+    private val _timing = MutableStateFlow<TimingStats?>(null)
+
+    /** How the ended run's taps landed; null when it has no timed hits. */
+    val timing: StateFlow<TimingStats?> = _timing.asStateFlow()
+
+    private val _offsetApply = MutableStateFlow(OffsetApply.Idle)
+    val offsetApply: StateFlow<OffsetApply> = _offsetApply.asStateFlow()
+
+    private val _offsetDialog = MutableStateFlow<OffsetDialog?>(null)
+
+    /** The open Apply dialog; null when closed. */
+    val offsetDialog: StateFlow<OffsetDialog?> = _offsetDialog.asStateFlow()
+
+    private var offsetJob: Job? = null
+
+    /** Whether Apply can change anything: the debug settings override replaces the saved offsets. */
+    val canEditOffset: Boolean get() = store != null && settingsOverride == null
+
+    /** Opens the Apply dialog with each scope's saved value, unless this run's correction was applied already. */
+    fun openOffsetDialog() {
+        val stats = _timing.value?.takeIf { it.canApply } ?: return
+        val store = store?.takeIf { canEditOffset } ?: return
+        if (_offsetApply.value != OffsetApply.Idle) return
+        viewModelScope.launch(io) {
+            val offsets = try {
+                store.inputOffsets(server.linkAddress, level).first()
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not read the input offsets: $e")
+                _message.value = OFFSET_FAILED
+                return@launch
+            }
+            if (_timing.value !== stats) return@launch // a new run started meanwhile
+            _offsetDialog.value = OffsetDialog(
+                stats.correctionMs,
+                OffsetScope.entries.map { OffsetChoice(it, offsets.of(it), suggestedOffset(offsets.of(it), stats.correctionMs)) },
+            )
+        }
+    }
+
+    fun dismissOffsetDialog() {
+        _offsetDialog.value = null
+    }
+
+    /** Saves the open dialog's suggestion for [scope]; Retry waits for it, and leaving the screen does not cancel it. */
+    fun applyOffset(scope: OffsetScope) {
+        val choice = _offsetDialog.value?.choices?.firstOrNull { it.scope == scope } ?: return
+        val store = store ?: return
+        if (!_offsetApply.compareAndSet(OffsetApply.Idle, OffsetApply.Saving)) return
+        _offsetDialog.value = null
+        offsetJob = CoroutineScope(io).launch {
+            try {
+                store.saveInputOffset(scope, server.linkAddress, level, choice.suggested)
+                inputOffsets = inputOffsets.with(scope, choice.suggested)
+                if (scope == OffsetScope.Global) appSettings = appSettings.copy(inputOffset = choice.suggested)
+                _offsetApply.value = OffsetApply.Applied
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not save the input offset: $e")
+                _offsetApply.value = OffsetApply.Idle
+                _message.value = OFFSET_FAILED
+            }
+        }
     }
 
     private val _resultInfo = MutableStateFlow<ResultInfo?>(null)
@@ -627,8 +711,12 @@ class GameplayViewModel(
         replayJob?.cancel()
         saveJob?.cancel()
         setReplaySave(ReplaySave.Unavailable)
+        _timing.value = null
+        _offsetDialog.value = null
         viewModelScope.launch(work) {
             try {
+                offsetJob?.join() // an Apply still saving belongs to the run about to start
+                _offsetApply.value = OffsetApply.Idle
                 synchronized(surfaceLock) { stopLocked() }
                 _state.value = GameplayUiState.Ready(summary)
                 startIfReady()?.join()
@@ -651,9 +739,19 @@ class GameplayViewModel(
     /** Settings: saves [settings] and shows them. */
     fun setSettings(settings: AppSettings) {
         val s = _state.value as? GameplayUiState.Options ?: return
-        _state.value = s.copy(settings = settings)
+        inputOffsets = inputOffsets.copy(global = settings.inputOffset)
+        _state.value = s.copy(settings = settings, offsets = inputOffsets)
         appSettings = settings
         store?.let { viewModelScope.launch(work) { it.saveSettings(settings) } }
+    }
+
+    /** Level options: saves this level's or this server's input offset and shows it. */
+    fun setInputOffset(scope: OffsetScope, value: Float) {
+        val s = _state.value as? GameplayUiState.Options ?: return
+        inputOffsets = inputOffsets.with(scope, value)
+        if (scope == OffsetScope.Global) appSettings = appSettings.copy(inputOffset = value)
+        _state.value = s.copy(settings = appSettings, offsets = inputOffsets)
+        store?.let { viewModelScope.launch(work) { it.saveInputOffset(scope, server.linkAddress, level, value) } }
     }
 
     private suspend fun readPreferences(configuration: File?) {
@@ -670,6 +768,7 @@ class GameplayViewModel(
         }
         savedOptions = store?.options(engine)?.first() ?: emptyMap()
         appSettings = store?.settings?.first() ?: AppSettings()
+        inputOffsets = store?.inputOffsets(server.linkAddress, level)?.first() ?: InputOffsets()
     }
 
     private fun load() {
@@ -793,6 +892,7 @@ class GameplayViewModel(
                 engineOptions,
                 engineOptions.associate { it.name to (savedOptions[it.name] ?: it.def) },
                 appSettings,
+                inputOffsets,
             )
         }
     } catch (e: CancellationException) {
@@ -868,6 +968,7 @@ class GameplayViewModel(
         const val REPLAY_POLL_MS = 100L
         const val REPLAY_POLLS = 50 // 5 s
         const val REPLAY_FAILED = "Couldn't save the replay"
+        const val OFFSET_FAILED = "Couldn't save the input offset"
         const val REPLAY_UNREADABLE = "This replay can't be read"
         const val REPLAY_CHART_CHANGED = "This replay was recorded on an older version of this chart"
         const val REPLAY_ENGINE_CHANGED = "The engine was updated since this run; playback may not match exactly"

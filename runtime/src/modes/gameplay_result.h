@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <vector>
 
 #include "modes/stats.h"
 
@@ -21,5 +23,8 @@ struct GameplayResult {
 // truncated; either is 0 when its divisor is 0. Grade: AllPerfect when Great + Good + Miss = 0, else FullCombo when
 // Good + Miss = 0, else Pass unless `failed`, else Fail. `combo` is the run's maximum combo.
 GameplayResult gameplay_result(const StatState& final, const StatState& max, int32_t total, bool failed);
+
+// Each input's judgment and accuracy (s, positive late), flattened in counting order: j0, a0, j1, a1, ...
+std::vector<float> judgment_timings(std::span<const StatInput> inputs);
 
 }  // namespace sr::modes

@@ -30,4 +30,14 @@ GameplayResult gameplay_result(const StatState& final, const StatState& max, int
     return r;
 }
 
+std::vector<float> judgment_timings(std::span<const StatInput> inputs) {
+    std::vector<float> out;
+    out.reserve(inputs.size() * 2);
+    for (const StatInput& input : inputs) {
+        out.push_back(input.judgment);
+        out.push_back(input.accuracy);
+    }
+    return out;
+}
+
 }  // namespace sr::modes

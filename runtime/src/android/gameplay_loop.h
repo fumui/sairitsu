@@ -136,6 +136,10 @@ public:
     static constexpr float kPlayRunning = 0, kPlayPaused = 1, kPlayCountdown = 2, kPlayEnded = 3;
     void play_state(float* out, std::vector<int32_t>& haptics);
 
+    // Play only: the ended run's judgments and accuracies (modes::judgment_timings); empty until the run has ended.
+    // Any thread.
+    std::vector<float> play_timings() const;
+
     // Play only. Cheap, any thread, no lock the level's start holds; the state reads back at once and the render
     // thread follows at its next frame.
     // pause: the stage freezes on the last frame, all audio is cut, touches are dropped. resume: a 1.0 s silent

@@ -17,6 +17,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <new>
 #include <vector>
 
 #include "android/aaudio_output.h"
@@ -180,6 +181,7 @@ struct GameplayLoop::State {
     std::atomic<float> play_status{GameplayLoop::kPlayRunning};
     float play_result[9] = {};
     bool partial = false;  // under play_mutex: the result is a quit's
+    std::vector<float> play_timings;  // under play_mutex: the ended run's judgments and accuracies
     std::vector<int32_t> haptics;
     // Pause, countdown, retry and quit (render thread, except the requests).
     enum class Phase { Running, Paused, Countdown } phase = Phase::Running;
@@ -489,6 +491,12 @@ void start_replay_write(State& s, double t) {
 void finish_play(State& s, double t, bool partial) {
     if (!partial) start_replay_write(s, t);  // Quits never leave a replay
     const modes::GameplayResult r = s.play->result();
+    std::vector<float> timings;
+    try {
+        timings = modes::judgment_timings(s.play->judgments());
+    } catch (const std::bad_alloc&) {  // the result still shows, without its timing chart
+        SR_LOGW("Play timings not kept: out of memory");
+    }
     {
         std::lock_guard<std::mutex> lock(s.play_mutex);
         const float values[9] = {float(int(r.grade)), float(r.arcade_score), float(r.accuracy_score), float(r.combo),
@@ -496,6 +504,7 @@ void finish_play(State& s, double t, bool partial) {
                                  float(r.total)};
         std::copy(values, values + 9, s.play_result);
         s.partial = partial;
+        s.play_timings = std::move(timings);
     }
     if (s.mixer) {
         if (partial && s.phase == State::Phase::Running) s.mixer->pause(s.mixer->music_to_frame(t));
@@ -1217,6 +1226,13 @@ void GameplayLoop::play_state(float* out, std::vector<int32_t>& haptics) {
     }
     haptics.insert(haptics.end(), s->haptics.begin(), s->haptics.end());
     s->haptics.clear();
+}
+
+std::vector<float> GameplayLoop::play_timings() const {
+    State* s = state_.get();
+    if (s == nullptr || s->play_status.load() != kPlayEnded) return {};
+    std::lock_guard<std::mutex> lock(s->play_mutex);
+    return s->play_timings;
 }
 
 // The UI-facing requests write `play_status` at once (so the next poll already shows it) and the render thread follows

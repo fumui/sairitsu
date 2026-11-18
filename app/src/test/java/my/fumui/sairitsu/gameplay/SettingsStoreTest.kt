@@ -52,4 +52,48 @@ class SettingsStoreTest {
         assertEquals(true, store.saveLevelsIPlay.first())
         assertEquals(AppSettings(), store.settings.first())
     }
+
+    @Test
+    fun inputOffsetsAreKeptPerScope() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        assertEquals(InputOffsets(), store.inputOffsets("a", "x").first())
+        store.saveInputOffset(OffsetScope.Level, "a", "x", -0.002f)
+        store.saveInputOffset(OffsetScope.Server, "a", "x", 0.003f)
+        store.saveInputOffset(OffsetScope.Global, "a", "x", 0.01f)
+        val offsets = store.inputOffsets("a", "x").first()
+        assertEquals(InputOffsets(global = 0.01f, server = 0.003f, level = -0.002f), offsets)
+        assertEquals(0.011f, offsets.total, 0f)
+    }
+
+    @Test
+    fun sameLevelNameOnTwoServersStaysSeparate() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        store.saveInputOffset(OffsetScope.Level, "a", "x", 0.004f)
+        store.saveInputOffset(OffsetScope.Level, "b", "x", -0.006f)
+        assertEquals(0.004f, store.inputOffsets("a", "x").first().level, 0f)
+        assertEquals(-0.006f, store.inputOffsets("b", "x").first().level, 0f)
+        assertEquals(0f, store.inputOffsets("a", "y").first().level, 0f)
+    }
+
+    @Test
+    fun savingZeroRemovesTheKey() = runBlocking {
+        val memory = MemoryStore()
+        val store = SettingsStore(memory)
+        store.saveInputOffset(OffsetScope.Level, "a", "x", 0.004f)
+        store.saveInputOffset(OffsetScope.Server, "a", "x", 0.004f)
+        store.saveInputOffset(OffsetScope.Level, "a", "x", 0f)
+        store.saveInputOffset(OffsetScope.Server, "a", "x", 0f)
+        assertEquals(emptySet<Preferences.Key<*>>(), memory.data.first().asMap().keys)
+    }
+
+    @Test
+    fun globalScopeKeepsOtherSettings() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        store.saveSettings(AppSettings(effectVolume = 0.5f, bgmVolume = 0.75f, audioOffset = 0.02f))
+        store.saveInputOffset(OffsetScope.Global, "a", "x", -0.007f)
+        assertEquals(
+            AppSettings(effectVolume = 0.5f, bgmVolume = 0.75f, audioOffset = 0.02f, inputOffset = -0.007f),
+            store.settings.first(),
+        )
+    }
 }

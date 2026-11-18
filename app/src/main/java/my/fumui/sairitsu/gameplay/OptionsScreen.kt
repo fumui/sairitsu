@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.text.Localizer
 import my.fumui.sairitsu.ui.AppSettingsSliders
+import my.fumui.sairitsu.ui.InputOffsetSlider
 import my.fumui.sairitsu.ui.OptionControl
 import my.fumui.sairitsu.ui.StepScale
 import my.fumui.sairitsu.ui.StepperSlider
@@ -41,6 +42,7 @@ fun OptionsScreen(
     state: GameplayUiState.Options,
     onOption: (name: String, value: Float) -> Unit,
     onSettings: (AppSettings) -> Unit,
+    onInputOffset: (OffsetScope, Float) -> Unit,
     onBack: () -> Unit,
 ) {
     val localizer = remember { Localizer(Localizer.serverLanguage(Locale.getDefault())) }
@@ -52,7 +54,16 @@ fun OptionsScreen(
                 OptionRow(option, state.values[option.name] ?: option.def, localizer) { onOption(option.name, it) }
             }
         }
-    } + SectionSpec("Audio & input", 4 * SLIDER_WEIGHT) { AppSettingsSliders(state.settings, onSettings) }
+    } + SectionSpec("Audio & input", 6 * SLIDER_WEIGHT + 1) {
+        AppSettingsSliders(state.settings, inputOffsetLabel = "Input offset (all levels)", onSettings = onSettings)
+        InputOffsetSlider("Input offset (this server)", state.offsets.server) { onInputOffset(OffsetScope.Server, it) }
+        InputOffsetSlider("Input offset (this level)", state.offsets.level) { onInputOffset(OffsetScope.Level, it) }
+        Text(
+            "Total input offset: ${offsetText(state.offsets.total)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 
     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
         BoxWithConstraints(Modifier.widthIn(max = 1280.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {

@@ -85,10 +85,16 @@ private fun GameplayContent(vm: GameplayViewModel, onBack: () -> Unit) {
             val info by vm.resultInfo.collectAsStateWithLifecycle()
             val level by vm.levelInfo.collectAsStateWithLifecycle()
             val replaySave by vm.replaySave.collectAsStateWithLifecycle()
+            val timing by vm.timing.collectAsStateWithLifecycle()
+            val offsetApply by vm.offsetApply.collectAsStateWithLifecycle()
+            val offsetDialog by vm.offsetDialog.collectAsStateWithLifecycle()
             ResultScreen(
-                s.result, s.partial, info, level, replaySave,
+                s.result, s.partial, info, level,
+                timing?.let { TimingUi(it, vm.canEditOffset, offsetApply, vm::openOffsetDialog) },
+                replaySave,
                 onSaveReplay = vm::saveReplay, onRetry = vm::retryFromResult, onBack = onBack,
             )
+            offsetDialog?.let { ApplyOffsetDialog(it, onApply = vm::applyOffset, onDismiss = vm::dismissOffsetDialog) }
         }
         // The level stays on its last frame behind the message.
         is GameplayUiState.Stopped -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -97,7 +103,9 @@ private fun GameplayContent(vm: GameplayViewModel, onBack: () -> Unit) {
             }
         }
         is GameplayUiState.Options -> Surface(Modifier.fillMaxSize()) {
-            OptionsScreen(s, onOption = vm::setOption, onSettings = vm::setSettings, onBack = onBack)
+            OptionsScreen(
+                s, onOption = vm::setOption, onSettings = vm::setSettings, onInputOffset = vm::setInputOffset, onBack = onBack,
+            )
         }
         else -> Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

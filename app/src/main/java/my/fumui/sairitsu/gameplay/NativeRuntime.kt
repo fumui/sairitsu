@@ -77,6 +77,9 @@ object NativeRuntime {
     /** Fills [out] ([PlayState.FLOATS]: the state, then the result); returns the pending haptic levels (drained). */
     external fun playState(handle: Long, out: FloatArray): IntArray
 
+    /** Play: the ended run's judged notes as judgment, accuracy (s, positive late) pairs; empty while a run is live. */
+    external fun playTimings(handle: Long): FloatArray
+
     /**
      * Play: freezes the stage on its last frame, cuts all audio and drops touches. Cheap and lock-free from any
      * thread; [playState] reads the new state at once.
@@ -270,6 +273,9 @@ interface LevelRuntime {
     /** Play: fills [out] (see [NativeRuntime.playState]) and returns the pending haptic levels. */
     fun playState(out: FloatArray): IntArray = IntArray(0)
 
+    /** Play: the ended run's judgment and accuracy pairs (see [NativeRuntime.playTimings]). */
+    fun playTimings(): FloatArray = FloatArray(0)
+
     /** Play: pause, resume (the countdown), retry and quit. Like [touch], they must not wait for [start]. */
     fun pause() = Unit
 
@@ -364,6 +370,9 @@ class NativeLevelRuntime : LevelRuntime {
 
     override fun playState(out: FloatArray): IntArray =
         handle.takeIf { it != 0L }?.let { NativeRuntime.playState(it, out) } ?: IntArray(0)
+
+    override fun playTimings(): FloatArray =
+        handle.takeIf { it != 0L }?.let { NativeRuntime.playTimings(it) } ?: FloatArray(0)
 
     // Like touch: not @Synchronized. The native side takes only its loop pointer's short lock.
     override fun pause() {

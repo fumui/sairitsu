@@ -1,5 +1,6 @@
 // GameplayResult and the StreamStore (wiki functions__stream-*).
 #include <string>
+#include <vector>
 
 #include "doctest.h"
 #include "modes/gameplay_result.h"
@@ -28,6 +29,17 @@ modes::StatState max_state() {
 }
 
 }  // namespace
+
+TEST_CASE("judgment_timings flattens judgment and accuracy in order") {
+    const modes::StatInput inputs[] = {{0, 0, 1.0f, 1.0f, -0.01f}, {1, 0, 2.0f, 0.0f, 0.1167f}};
+    const std::vector<float> timings = modes::judgment_timings(inputs);
+    REQUIRE(timings.size() == 4);
+    CHECK(timings[0] == 1.0f);
+    CHECK(timings[1] == -0.01f);
+    CHECK(timings[2] == 0.0f);
+    CHECK(timings[3] == 0.1167f);
+    CHECK(modes::judgment_timings({}).empty());
+}
 
 TEST_CASE("all perfect grades allPerfect") {
     const modes::GameplayResult r = modes::gameplay_result(state(10, 0, 0, 0), max_state(), 10, false);

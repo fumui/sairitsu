@@ -9,10 +9,11 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
 
 /**
- * App-wide gameplay settings. Defaults: BGM volume 100 %, effect volume ("SFX") 25 % and no offsets (level and
- * server offsets would be other layers; this is the device's). Offsets are seconds.
+ * App-wide gameplay settings. Defaults: BGM volume 100 %, effect volume ("SFX") 25 % and no offsets. Offsets are
+ * seconds; [inputOffset] is the global layer of [InputOffsets].
  */
 data class AppSettings(
     val effectVolume: Float = 0.25f,
@@ -22,6 +23,32 @@ data class AppSettings(
 ) {
     /** In [NativeSettings] order. */
     fun toNative(): FloatArray = floatArrayOf(effectVolume, bgmVolume, audioOffset, inputOffset)
+}
+
+/** Where an input offset applies, narrowest first. */
+enum class OffsetScope(val label: String) {
+    Level("This level"),
+    Server("This server"),
+    Global("All levels"),
+}
+
+/** The input offset layers for one level, in seconds. A run uses their [total]. */
+data class InputOffsets(val global: Float = 0f, val server: Float = 0f, val level: Float = 0f) {
+    /** The sum in whole ms, so float rounding never reaches the runtime or a replay. */
+    val total: Float
+        get() = listOf(global, server, level).sumOf { (it * 1000f).roundToInt() } / 1000f
+
+    fun of(scope: OffsetScope): Float = when (scope) {
+        OffsetScope.Level -> level
+        OffsetScope.Server -> server
+        OffsetScope.Global -> global
+    }
+
+    fun with(scope: OffsetScope, value: Float): InputOffsets = when (scope) {
+        OffsetScope.Level -> copy(level = value)
+        OffsetScope.Server -> copy(server = value)
+        OffsetScope.Global -> copy(global = value)
+    }
 }
 
 internal val Context.gameplayStore by preferencesDataStore(name = "gameplay_settings")
@@ -63,6 +90,27 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         }
     }
 
+    /** The input offset layers for [level] on [server] (a [my.fumui.sairitsu.data.ServerAddress.linkAddress]). */
+    fun inputOffsets(server: String, level: String): Flow<InputOffsets> = store.data.map { prefs ->
+        InputOffsets(
+            global = prefs[INPUT_OFFSET] ?: 0f,
+            server = prefs[serverOffsetKey(server)] ?: 0f,
+            level = prefs[levelOffsetKey(server, level)] ?: 0f,
+        )
+    }
+
+    /** Saves one layer. A server or level value of 0 removes its key, so unused layers leave nothing behind. */
+    suspend fun saveInputOffset(scope: OffsetScope, server: String, level: String, value: Float) {
+        store.edit { prefs ->
+            val key = when (scope) {
+                OffsetScope.Global -> INPUT_OFFSET
+                OffsetScope.Server -> serverOffsetKey(server)
+                OffsetScope.Level -> levelOffsetKey(server, level)
+            }
+            if (value == 0f && scope != OffsetScope.Global) prefs.remove(key) else prefs[key] = value
+        }
+    }
+
     /** "Save levels I play": every level loaded from an online server is added to the library. Default off. */
     val saveLevelsIPlay: Flow<Boolean> = store.data.map { it[SAVE_LEVELS_I_PLAY] ?: false }
 
@@ -78,6 +126,10 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     }
 
     private fun optionPrefix(engine: String) = "option|$engine|"
+
+    private fun serverOffsetKey(server: String) = floatPreferencesKey("input_offset|server|$server")
+
+    private fun levelOffsetKey(server: String, level: String) = floatPreferencesKey("input_offset|level|$server|$level")
 
     private companion object {
         val SAVE_LEVELS_I_PLAY = booleanPreferencesKey("save_levels_i_play")

@@ -6,9 +6,14 @@ import my.fumui.sairitsu.gameplay.AppSettings
 private val VOLUME = StepScale(0.0, 1.0, 0.01)
 private val OFFSET = StepScale(-0.5, 0.5, 0.001)
 
+/** One input offset layer's slider (default 0), for "Level options". */
+@Composable
+fun InputOffsetSlider(label: String, value: Float, onChange: (Float) -> Unit) =
+    SettingSlider(label, value, 0f, OFFSET, ValueFormat.SECONDS_AS_MS, onChange)
+
 /** The four [AppSettings] sliders, shared by Settings and "Level options". */
 @Composable
-fun AppSettingsSliders(s: AppSettings, onSettings: (AppSettings) -> Unit) {
+fun AppSettingsSliders(s: AppSettings, inputOffsetLabel: String = "Input offset", onSettings: (AppSettings) -> Unit) {
     val d = AppSettings()
     SettingSlider("Effect volume", s.effectVolume, d.effectVolume, VOLUME, ValueFormat.PERCENT) {
         onSettings(s.copy(effectVolume = it))
@@ -19,7 +24,7 @@ fun AppSettingsSliders(s: AppSettings, onSettings: (AppSettings) -> Unit) {
     SettingSlider("Audio offset", s.audioOffset, d.audioOffset, OFFSET, ValueFormat.SECONDS_AS_MS) {
         onSettings(s.copy(audioOffset = it))
     }
-    SettingSlider("Input offset", s.inputOffset, d.inputOffset, OFFSET, ValueFormat.SECONDS_AS_MS) {
+    SettingSlider(inputOffsetLabel, s.inputOffset, d.inputOffset, OFFSET, ValueFormat.SECONDS_AS_MS) {
         onSettings(s.copy(inputOffset = it))
     }
 }
