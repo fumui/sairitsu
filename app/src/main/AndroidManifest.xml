@@ -14,6 +14,12 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- Android 16 ignores screenOrientation on large screens (smallest width >= 600dp) for apps targeting API 36,
+             so tablets could rotate to portrait. This opt-out keeps the landscape lock, but the platform drops it at
+             targetSdk 37: raising targetSdk needs another way to stay in landscape. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
