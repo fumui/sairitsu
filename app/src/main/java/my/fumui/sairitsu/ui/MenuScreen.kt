@@ -141,7 +141,7 @@ private fun Title(levelCount: Int) {
 
 /** [url] filling the screen, blurred, slowly zooming and drifting sideways. */
 @Composable
-private fun DriftingCover(url: String) {
+internal fun DriftingCover(url: String) {
     val transition = rememberInfiniteTransition(label = "drift")
     val t by transition.animateFloat(
         initialValue = 0f,
@@ -168,7 +168,7 @@ private fun DriftingCover(url: String) {
 }
 
 @Composable
-private fun MenuButton(label: String, icon: ImageVector, primary: Boolean = false, onClick: () -> Unit) {
+internal fun MenuButton(label: String, icon: ImageVector, primary: Boolean = false, onClick: () -> Unit) {
     val content: @Composable RowScope.() -> Unit = {
         Icon(icon, contentDescription = null, Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))

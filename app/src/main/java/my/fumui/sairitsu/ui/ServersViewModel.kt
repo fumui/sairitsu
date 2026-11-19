@@ -7,6 +7,7 @@ import my.fumui.sairitsu.data.LevelSource
 import my.fumui.sairitsu.data.ServerCatalogs
 import my.fumui.sairitsu.data.SavedServer
 import my.fumui.sairitsu.data.ServerAddress
+import my.fumui.sairitsu.data.ServerConfigStore
 import my.fumui.sairitsu.data.ServerListStore
 import my.fumui.sairitsu.text.Localizer
 import kotlinx.coroutines.CancellationException
@@ -27,7 +28,8 @@ class ServersViewModel(
     private val store: ServerListStore,
     private val apiFactory: (ServerAddress) -> LevelSource,
     private val catalogs: ServerCatalogs? = null,
-) : ViewModel() {
+    private val configs: ServerConfigStore? = null,
+): ViewModel() {
     /** Each server's saved level list (count, last sync, sync progress), by address. */
     val catalogSummaries: StateFlow<Map<String, CatalogSummary>> = catalogs?.summaries ?: MutableStateFlow(emptyMap())
 
@@ -114,6 +116,7 @@ class ServersViewModel(
                     _cards.update { it - server.address }
                     catalogs?.delete(server.address)
                     catalogs?.open(address)
+                    configOp { it.move(server.address, address.linkAddress) }
                 }
             }
         }
@@ -129,8 +132,22 @@ class ServersViewModel(
     }
 
     fun remove(address: String) {
-        viewModelScope.launch { store.remove(address) }
+        viewModelScope.launch {
+            store.remove(address)
+            configOp { it.clear(address) }
+        }
         catalogs?.delete(address)
+    }
+
+    /** Runs a configuration change; a failed disk write leaves the configuration as it was. */
+    private suspend fun configOp(change: suspend (ServerConfigStore) -> Unit) {
+        val store = configs ?: return
+        try {
+            change(store)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
     }
 
     /** Downloads [server]'s whole level list again (picks up edited and removed levels). */

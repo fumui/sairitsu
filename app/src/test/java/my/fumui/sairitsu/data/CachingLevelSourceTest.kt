@@ -33,6 +33,17 @@ class CachingLevelSourceTest {
     }
 
     @Test
+    fun invalidateDropsOnlyThatServer() {
+        cache.put("a.com|info", 1)
+        cache.put("a.com|levels/info", 2)
+        cache.put("b.com|info", 3)
+        cache.invalidate("a.com")
+        assertEquals(null, cache.get("a.com|info"))
+        assertEquals(null, cache.get("a.com|levels/info"))
+        assertEquals(3, cache.get("b.com|info"))
+    }
+
+    @Test
     fun expiresAfterTtl() = runBlocking {
         source.levelDetails("x")
         clock = 1001

@@ -23,6 +23,9 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServersViewModelTest {
+    @get:org.junit.Rule
+    val folder = org.junit.rules.TemporaryFolder()
+
     private val dispatcher = StandardTestDispatcher()
     private val store = ServerListStore(MemoryDataStore())
     private var info: suspend () -> ServerInfo = { ServerInfo(title = "Coconut Horizon") }
@@ -162,6 +165,35 @@ class ServersViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("sonolus.sbuga.com"), catalogs.deleted)
         assertEquals(listOf("example.com"), catalogs.opened)
+    }
+
+    /** The config store writes on Dispatchers.IO, so wait in real time for [done] while running the test dispatcher. */
+    private fun TestScope.settle(done: () -> Boolean) {
+        repeat(500) {
+            advanceUntilIdle()
+            if (done()) return
+            Thread.sleep(10)
+        }
+    }
+
+    @Test
+    fun removeClearsConfiguration() = test {
+        val configs = my.fumui.sairitsu.data.ServerConfigStore(folder.newFile("c1.json"))
+        configs.save("sonolus.sbuga.com", mapOf("genre" to "rock"))
+        val vm = ServersViewModel(store, { source }, catalogs, configs).also { advanceUntilIdle() }
+        vm.remove("sonolus.sbuga.com")
+        settle { configs.values.value.isEmpty() }
+        assertEquals(emptyMap<String, Map<String, String>>(), configs.values.value)
+    }
+
+    @Test
+    fun editingAddressMovesConfiguration() = test {
+        val configs = my.fumui.sairitsu.data.ServerConfigStore(folder.newFile("c2.json"))
+        configs.save("sonolus.sbuga.com", mapOf("genre" to "rock"))
+        val vm = ServersViewModel(store, { source }, catalogs, configs).also { advanceUntilIdle() }
+        vm.edit(store.servers.first().first(), "example.com", "Example")
+        settle { "example.com" in configs.values.value }
+        assertEquals(mapOf("example.com" to mapOf("genre" to "rock")), configs.values.value)
     }
 
     @Test

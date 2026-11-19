@@ -26,10 +26,13 @@ sealed interface OptionGroup {
 object SearchForms {
     fun defaults(search: Search): List<OptionState> = search.options.map(::defaultOf)
 
-    fun query(search: Search, values: List<OptionState>): Map<String, String> {
+    fun query(search: Search, values: List<OptionState>): Map<String, String> =
+        mapOf("type" to search.type) + params(search.options, values)
+
+    /** The non-default values as query parameters, without a form `type`. */
+    fun params(options: List<SearchOption>, values: List<OptionState>): Map<String, String> {
         val params = LinkedHashMap<String, String>()
-        params["type"] = search.type
-        search.options.forEachIndexed { i, option ->
+        options.forEachIndexed { i, option ->
             val value = values.getOrNull(i) ?: return@forEachIndexed
             if (value == OptionState.Unsupported || value == defaultOf(option)) return@forEachIndexed
             params[option.query] = when (value) {

@@ -3,13 +3,18 @@ package my.fumui.sairitsu.app
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,35 +26,48 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import my.fumui.sairitsu.audio.PreviewPlayer
+import my.fumui.sairitsu.data.ItemApi
 import my.fumui.sairitsu.data.LevelKey
 import my.fumui.sairitsu.data.ServerAddress
-import my.fumui.sairitsu.ui.BrowseDownloads
 import my.fumui.sairitsu.data.model.LevelItem
+import my.fumui.sairitsu.gameplay.GameplayMode
 import my.fumui.sairitsu.library.Membership
 import my.fumui.sairitsu.library.collectionNameError
 import my.fumui.sairitsu.library.membership
 import my.fumui.sairitsu.library.sortedByName
+import my.fumui.sairitsu.play.InAppPlayLauncher
+import my.fumui.sairitsu.play.Launchers
+import my.fumui.sairitsu.text.Localizer
+import my.fumui.sairitsu.ui.BrowseDownloads
 import my.fumui.sairitsu.ui.CollectionRow
 import my.fumui.sairitsu.ui.CollectionScreen
 import my.fumui.sairitsu.ui.CollectionsScreen
 import my.fumui.sairitsu.ui.CollectionsViewModel
-import my.fumui.sairitsu.ui.PickerScope
+import my.fumui.sairitsu.ui.HubSection
 import my.fumui.sairitsu.ui.LibraryScreen
 import my.fumui.sairitsu.ui.LibraryViewModel
 import my.fumui.sairitsu.ui.Loadable
-import my.fumui.sairitsu.ui.ServersScreen
-import my.fumui.sairitsu.ui.ServersViewModel
-import kotlinx.coroutines.launch
-import my.fumui.sairitsu.gameplay.GameplayMode
-import my.fumui.sairitsu.play.InAppPlayLauncher
-import my.fumui.sairitsu.play.Launchers
-import my.fumui.sairitsu.text.Localizer
 import my.fumui.sairitsu.ui.MenuScreen
+import my.fumui.sairitsu.ui.PickerScope
 import my.fumui.sairitsu.ui.PickerScreen
 import my.fumui.sairitsu.ui.PickerViewModel
+import my.fumui.sairitsu.ui.PostsScreen
+import my.fumui.sairitsu.ui.PostsViewModel
+import my.fumui.sairitsu.ui.ServerConfigScreen
+import my.fumui.sairitsu.ui.ServerConfigViewModel
+import my.fumui.sairitsu.ui.ServerHubScreen
+import my.fumui.sairitsu.ui.ServerHubViewModel
+import my.fumui.sairitsu.ui.ServerSkinsScreen
+import my.fumui.sairitsu.ui.ServerSkinsViewModel
+import my.fumui.sairitsu.ui.ServersScreen
+import my.fumui.sairitsu.ui.ServersViewModel
 import my.fumui.sairitsu.ui.SettingsScreen
-import kotlinx.serialization.Serializable
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 
 @Serializable
 object MenuRoute
@@ -59,6 +77,21 @@ object ServersRoute
 
 @Serializable
 data class BrowseRoute(val address: String)
+
+@Serializable
+data class ServerHubRoute(val address: String)
+
+@Serializable
+data class ServerConfigRoute(val address: String)
+
+@Serializable
+data class ServerSkinsRoute(val address: String)
+
+@Serializable
+data class ServerPostsRoute(val address: String)
+
+/** savedStateHandle key (on the hub's entry) for a message the hub shows in a snackbar. */
+const val HUB_MESSAGE = "hubMessage"
 
 @Serializable
 object LibraryRoute
@@ -108,9 +141,131 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
         }
         composable<ServersRoute> {
             val vm: ServersViewModel = viewModel(
-                factory = viewModelFactory { initializer { ServersViewModel(services.servers, services::levelSource, services.catalog) } },
+                factory = viewModelFactory { initializer { ServersViewModel(services.servers, services::levelSource, services.catalog, services.serverConfigs) } },
             )
-            ServersScreen(vm, onOpen = { nav.navigate(BrowseRoute(it.url)) }, onBack = { nav.popBackStack() })
+            ServersScreen(vm, onOpen = { nav.navigate(ServerHubRoute(it.url)) }, onBack = { nav.popBackStack() })
+        }
+        composable<ServerHubRoute> { entry ->
+            val address = entry.toRoute<ServerHubRoute>().address
+            val server = remember(address) { ServerAddress.parse(address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val vm: ServerHubViewModel = viewModel(
+                factory = viewModelFactory { initializer { ServerHubViewModel(services.levelSource(server)) } },
+            )
+            LaunchedEffect(server) { services.catalog.loadSummaries(listOf(server.linkAddress)) }
+            val info by vm.info.collectAsState()
+            val servers by services.servers.servers.collectAsState(emptyList())
+            val summaries by services.catalog.summaries.collectAsState()
+            val message by entry.savedStateHandle.getStateFlow<String?>(HUB_MESSAGE, null).collectAsState()
+            // A saved configuration invalidated the cached server info, so fetch it again.
+            LaunchedEffect(message) { if (message != null) vm.retry() }
+            ServerHubScreen(
+                server = server,
+                savedTitle = servers.firstOrNull { it.address == server.linkAddress }?.title,
+                info = info,
+                catalog = summaries[server.linkAddress],
+                localizer = localizer,
+                message = message,
+                onMessageShown = { entry.savedStateHandle[HUB_MESSAGE] = null },
+                onSection = { section ->
+                    nav.navigate(
+                        when (section) {
+                            HubSection.Levels -> BrowseRoute(server.baseUrl.toString())
+                            HubSection.Posts -> ServerPostsRoute(address)
+                            HubSection.Skins -> ServerSkinsRoute(address)
+                            HubSection.Configuration -> ServerConfigRoute(address)
+                        },
+                    )
+                },
+                onRetry = vm::retry,
+                onBack = { nav.popBackStack() },
+            )
+        }
+        composable<ServerPostsRoute> { entry ->
+            val address = entry.toRoute<ServerPostsRoute>().address
+            val server = remember(address) { ServerAddress.parse(address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val vm: PostsViewModel = viewModel(
+                factory = viewModelFactory { initializer { PostsViewModel(ItemApi(server, services.client)) } },
+            )
+            PostsScreen(vm, server, localizer, onBack = { nav.popBackStack() })
+        }
+        composable<ServerSkinsRoute> { entry ->
+            val address = entry.toRoute<ServerSkinsRoute>().address
+            val server = remember(address) { ServerAddress.parse(address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val vm: ServerSkinsViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer { ServerSkinsViewModel(server, ItemApi(server, services.client), services.skinLibrary) }
+                },
+            )
+            ServerSkinsScreen(vm, server, localizer, onBack = { nav.popBackStack() })
+        }
+        composable<ServerConfigRoute> { entry ->
+            val address = entry.toRoute<ServerConfigRoute>().address
+            val server = remember(address) { ServerAddress.parse(address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val link = server.linkAddress
+            val vm: ServerConfigViewModel = viewModel(
+                factory = viewModelFactory {
+                    initializer {
+                        ServerConfigViewModel(services.levelSource(server)) { services.serverConfigs.values.value[link].orEmpty() }
+                    }
+                },
+            )
+            val form by vm.form.collectAsState()
+            val snackbar = remember { SnackbarHostState() }
+            val uiScope = rememberCoroutineScope()
+            var saving by remember { mutableStateOf(false) }
+            ServerConfigScreen(
+                form = form,
+                localizer = localizer,
+                onChange = vm::set,
+                onReset = vm::reset,
+                onSave = save@{
+                    val ready = (form as? Loadable.Ready)?.value ?: return@save
+                    if (saving) return@save
+                    saving = true
+                    services.scope.launch {
+                        try {
+                            services.serverConfigs.save(link, ready.params())
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            saving = false
+                            uiScope.launch { snackbar.showSnackbar("Couldn't save the configuration") }
+                            return@launch
+                        }
+                        services.responses.invalidate(link)
+                        val hasList = services.catalog.summaries.value[link] != null
+                        if (hasList) services.catalog.refresh(server)
+                        withContext(Dispatchers.Main) {
+                            // Back during the save already left this screen; don't pop whatever is on top now.
+                            if (nav.currentBackStackEntry?.id != entry.id) return@withContext
+                            nav.previousBackStackEntry?.savedStateHandle?.set(
+                                HUB_MESSAGE,
+                                if (hasList) "Configuration saved. Refreshing the level list…" else "Configuration saved.",
+                            )
+                            nav.popBackStack()
+                        }
+                    }
+                },
+                onRetry = vm::retry,
+                onBack = { nav.popBackStack() },
+                snackbar = snackbar,
+            )
         }
         composable<BrowseRoute> { entry ->
             val address = entry.toRoute<BrowseRoute>().address

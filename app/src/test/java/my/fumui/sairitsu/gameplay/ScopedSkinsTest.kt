@@ -3,8 +3,10 @@ package my.fumui.sairitsu.gameplay
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import my.fumui.sairitsu.data.ServerAddress
+import my.fumui.sairitsu.data.model.ServerJson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -59,7 +61,7 @@ class ScopedSkinsTest {
     }
 
     private suspend fun saved(name: String): SkinSelection.Saved =
-        SkinSelection.Saved(library.add(address, library.offers(address).first { it.name == name }).id)
+        SkinSelection.Saved(library.add(address, library.offer(address, ServerJson.parseToJsonElement(skin(name)).jsonObject)!!).id)
 
     private fun loaded(): LoadedResources {
         val files = ResourceKind.entries.associateWith { kind ->

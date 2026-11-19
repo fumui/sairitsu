@@ -54,6 +54,21 @@ data class ItemSection(
     }
 }
 
+/** The fields every list item shares, for rows of any item type. */
+@Serializable
+data class ItemSummary(
+    val name: String,
+    val title: String = "",
+    val subtitle: String = "",
+    val author: String = "",
+    val thumbnail: Srl? = null,
+    val time: Long = 0,
+)
+
+/** The top level of an item's details response. */
+@Serializable
+data class ItemDetailsText(val description: String? = null)
+
 @Serializable
 data class OptionValue(val name: String, val title: String)
 
@@ -70,6 +85,8 @@ data class SearchOption(
     val min: Double? = null,
     val max: Double? = null,
     val step: Double? = null,
+    val description: String? = null,
+    val unit: String? = null,
 )
 
 @Serializable
@@ -81,7 +98,19 @@ data class Search(
 )
 
 @Serializable
-data class ServerInfo(val title: String, val description: String? = null, val banner: Srl? = null)
+data class ServerInfoButton(val type: String, val title: String? = null)
+
+@Serializable
+data class ServerConfiguration(val options: List<SearchOption> = emptyList())
+
+@Serializable
+data class ServerInfo(
+    val title: String,
+    val description: String? = null,
+    val banner: Srl? = null,
+    val buttons: List<ServerInfoButton> = emptyList(),
+    val configuration: ServerConfiguration? = null,
+)
 
 @Serializable
 data class ItemInfo(

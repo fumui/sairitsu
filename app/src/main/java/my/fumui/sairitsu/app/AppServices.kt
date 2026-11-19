@@ -7,6 +7,8 @@ import my.fumui.sairitsu.data.LevelSource
 import my.fumui.sairitsu.ui.CatalogHandle
 import my.fumui.sairitsu.data.ResponseCache
 import my.fumui.sairitsu.data.ServerAddress
+import my.fumui.sairitsu.data.ServerConfigInterceptor
+import my.fumui.sairitsu.data.ServerConfigStore
 import my.fumui.sairitsu.data.ServerListStore
 import my.fumui.sairitsu.data.ServerApi
 import my.fumui.sairitsu.gameplay.DataStoreResultStore
@@ -49,7 +51,9 @@ suspend fun saveIfWanted(enabled: Boolean, inLibrary: Boolean, save: suspend () 
  * [ResourceCache] may own its directory at a time, so there is exactly one instance per process.
  */
 class AppServices private constructor(context: Context) {
-    val client = OkHttpClient()
+    val serverConfigs = ServerConfigStore(File(context.filesDir, "server-config.json"))
+
+    val client = OkHttpClient.Builder().addInterceptor(ServerConfigInterceptor { serverConfigs.values.value }).build()
 
     /** filesDir, not cacheDir: the OS may clear cacheDir, and a downloaded level must start offline. */
     val cache = ResourceCache(File(context.filesDir, "resources"))

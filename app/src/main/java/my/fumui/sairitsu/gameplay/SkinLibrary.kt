@@ -1,5 +1,6 @@
 package my.fumui.sairitsu.gameplay
 
+import my.fumui.sairitsu.data.ItemApi
 import my.fumui.sairitsu.data.ServerAddress
 import my.fumui.sairitsu.data.ServerApiException
 import my.fumui.sairitsu.data.model.ServerJson
@@ -16,13 +17,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -49,13 +46,11 @@ class SkinLibrary(dir: File, private val client: OkHttpClient) {
     private val _skins = MutableStateFlow(readManifest())
     val skins: StateFlow<List<SavedSkin>> = _skins.asStateFlow()
 
-    /** Every skin on [server], following its pages or cursor. */
-    suspend fun offers(server: ServerAddress): List<SkinOffer> = withContext(Dispatchers.IO) {
-        skinItems(server).mapNotNull { skin ->
-            val name = text(skin, "name") ?: return@mapNotNull null
-            val skinRefs = refs(skin, server, SKIN_KINDS) ?: return@mapNotNull null
-            SkinOffer(name, text(skin, "title") ?: name, skinRefs)
-        }
+    /** The offer for one skin list item; null when it lacks a name, data or texture. */
+    fun offer(server: ServerAddress, item: JsonObject): SkinOffer? {
+        val name = text(item, "name") ?: return null
+        val skinRefs = refs(item, server, SKIN_KINDS) ?: return null
+        return SkinOffer(name, text(item, "title") ?: name, skinRefs)
     }
 
     /**
@@ -126,25 +121,6 @@ class SkinLibrary(dir: File, private val client: OkHttpClient) {
         emptyList()
     }
 
-    /** The items of every page of the server's skin list, up to [MAX_PAGES] pages. */
-    private suspend fun skinItems(server: ServerAddress): List<JsonObject> {
-        val items = ArrayList<JsonObject>()
-        var page = 0
-        var cursor: String? = null
-        while (page < MAX_PAGES) {
-            val url = server.baseUrl.newBuilder().addPathSegments("sonolus/skins/list").apply {
-                if (cursor != null) addQueryParameter("cursor", cursor) else if (page > 0) addQueryParameter("page", "$page")
-            }.build()
-            val body = getObject(url)
-            items += (body["items"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
-            cursor = text(body, "cursor")
-            page++
-            val pageCount = (body["pageCount"] as? JsonPrimitive)?.intOrNull ?: 1
-            if (cursor == null && page >= pageCount) break
-        }
-        return items
-    }
-
     /**
      * The [kinds] of the item named [name] in [section] (`backgrounds` or `particles`) on [server]; null when the server
      * has none by that name.
@@ -155,29 +131,13 @@ class SkinLibrary(dir: File, private val client: OkHttpClient) {
         name: String,
         kinds: List<ResourceKind>,
     ): List<ResourceRef>? {
-        val url = server.baseUrl.newBuilder().addPathSegment("sonolus").addPathSegment(section).addPathSegment(name).build()
         val item = try {
-            getObject(url)["item"] as? JsonObject
+            ItemApi(server, client).details(section, name)["item"] as? JsonObject
         } catch (e: ServerApiException) {
             if (e.code == 404) return null
             throw e
         }
         return item?.let { refs(it, server, kinds) }
-    }
-
-    /** The JSON object at [url]; an HTTP error is a [ServerApiException], any other body an [IOException]. */
-    private suspend fun getObject(url: HttpUrl): JsonObject {
-        val body = withCall(client.newCall(Request.Builder().url(url).build())) { response ->
-            if (!response.isSuccessful) throw ServerApiException(response.code, "HTTP ${response.code} for $url")
-            response.body!!.string()
-        }
-        return try {
-            ServerJson.parseToJsonElement(body).jsonObject
-        } catch (e: SerializationException) {
-            throw IOException("Unreadable response from $url", e)
-        } catch (e: IllegalArgumentException) {
-            throw IOException("Unreadable response from $url", e)
-        }
     }
 
     /** The resources of [item] for [kinds]; null when one is missing. */
@@ -198,7 +158,6 @@ class SkinLibrary(dir: File, private val client: OkHttpClient) {
     }
 
     private companion object {
-        const val MAX_PAGES = 50
         val MANIFEST = ListSerializer(SavedSkin.serializer())
         val SKIN_KINDS = listOf(ResourceKind.SKIN_DATA, ResourceKind.SKIN_TEXTURE)
         val BACKGROUND_KINDS = listOf(

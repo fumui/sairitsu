@@ -1,7 +1,10 @@
 package my.fumui.sairitsu.gameplay
 
 import my.fumui.sairitsu.data.ServerAddress
+import my.fumui.sairitsu.data.model.ServerJson
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -10,6 +13,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -89,29 +93,26 @@ class SkinLibraryTest {
     }
 
     private suspend fun SkinLibrary.addNamed(name: String): SavedSkin =
-        add(server, offers(server).first { it.name == name })
+        add(server, offerOf(name))
+
+    private fun item(name: String): JsonObject = ServerJson.parseToJsonElement(skin(name)).jsonObject
+
+    private fun SkinLibrary.offerOf(name: String): SkinOffer = offer(server, item(name))!!
 
     @Test
-    fun offersListTheServersSkins() = runTest {
-        val offer = library().offers(server).single()
+    fun offerFromItem() {
+        val offer = library().offer(server, item("look"))!!
         assertEquals("look", offer.name)
         assertEquals("Title look", offer.title)
         assertEquals(setOf(ResourceKind.SKIN_DATA, ResourceKind.SKIN_TEXTURE), offer.refs.map { it.kind }.toSet())
+        assertEquals(server.resolve("/s/data-look"), offer.refs.first { it.kind == ResourceKind.SKIN_DATA }.url)
+        assertEquals(server.resolve("/s/texture-look"), offer.refs.first { it.kind == ResourceKind.SKIN_TEXTURE }.url)
     }
 
     @Test
-    fun offersIncludeEveryPage() = runTest {
-        bodies["/sonolus/skins/list"] = """{"pageCount":3,"items":[${skin("a")}]}"""
-        bodies["/sonolus/skins/list?page=1"] = """{"pageCount":3,"items":[${skin("b")}]}"""
-        bodies["/sonolus/skins/list?page=2"] = """{"pageCount":3,"items":[${skin("c")}]}"""
-        assertEquals(listOf("a", "b", "c"), library().offers(server).map { it.name })
-    }
-
-    @Test
-    fun offersFollowACursor() = runTest {
-        bodies["/sonolus/skins/list"] = """{"pageCount":-1,"cursor":"next","items":[${skin("a")}]}"""
-        bodies["/sonolus/skins/list?cursor=next"] = """{"pageCount":-1,"items":[${skin("b")}]}"""
-        assertEquals(listOf("a", "b"), library().offers(server).map { it.name })
+    fun offerWithoutTextureIsNull() {
+        val item = ServerJson.parseToJsonElement("""{"name":"x","title":"X","data":{"url":"/s/d"}}""").jsonObject
+        assertNull(library().offer(server, item))
     }
 
     @Test
@@ -126,7 +127,7 @@ class SkinLibraryTest {
     fun backgroundThatCannotBeReadSavesNothing() = runTest {
         bodies.remove("/sonolus/backgrounds/look")
         val library = library()
-        val offer = library.offers(server).single()
+        val offer = library.offerOf("look")
         bodies["/sonolus/backgrounds/look"] = "<html>portal</html>"
         try {
             library.add(server, offer)
@@ -215,7 +216,7 @@ class SkinLibraryTest {
     @Test
     fun particlesThatCannotBeReadSaveNothing() = runTest {
         val library = library()
-        val offer = library.offers(server).single()
+        val offer = library.offerOf("look")
         bodies["/sonolus/particles/look"] = "<html>portal</html>"
         try {
             library.add(server, offer)
@@ -240,7 +241,7 @@ class SkinLibraryTest {
     @Test
     fun corruptDownloadSavesNothing() = runTest {
         val library = library()
-        val offer = library.offers(server).single()
+        val offer = library.offerOf("look")
         bodies["/s/texture-look"] = "corrupt"
         try {
             library.add(server, offer)
@@ -287,17 +288,5 @@ class SkinLibraryTest {
         assertEquals(first.id, second.id)
         assertEquals(1, library.skins.value.size)
         assertEquals("skin data look", library.applyTo(level(), first.id).files.getValue(ResourceKind.SKIN_DATA).readText())
-    }
-
-    @Test
-    fun unreadableSkinListIsAnIOException() = runTest {
-        bodies["/sonolus/skins/list"] = "<html>portal</html>"
-        val library = library()
-        try {
-            library.offers(server)
-            fail("expected IOException")
-        } catch (e: IOException) {
-            assertTrue(library.skins.value.isEmpty())
-        }
     }
 }

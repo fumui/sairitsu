@@ -17,7 +17,9 @@ class FakeLevelSource : LevelSource {
     var list: suspend (Map<String, String>, String?) -> ItemList = { _, cursor -> if (cursor == null) PAGE_1 else PAGE_2 }
     var details: suspend (String) -> ItemDetails = { name -> ItemDetails(item = LevelItem(name = name, title = name)) }
 
-    override suspend fun serverInfo() = ServerInfo(title = "Coconut Horizon")
+    var server: suspend () -> ServerInfo = { ServerInfo(title = "Coconut Horizon") }
+
+    override suspend fun serverInfo() = server()
 
     override suspend fun levelInfo() = info()
 

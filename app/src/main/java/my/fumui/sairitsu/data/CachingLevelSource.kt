@@ -36,6 +36,12 @@ class ResponseCache(
         entries[key] = Entry(value, now())
     }
 
+    /** Drops everything cached for [server] (keys starting with "$server|"). */
+    @Synchronized
+    fun invalidate(server: String) {
+        entries.keys.removeAll { it.startsWith("$server|") }
+    }
+
     /** The cached value for [key], or [load]'s result, cached. */
     suspend fun <T : Any> getOrLoad(key: String, load: suspend () -> T): T {
         @Suppress("UNCHECKED_CAST")

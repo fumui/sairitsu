@@ -65,4 +65,22 @@ class ParsingTest {
         )
         assertEquals("color", option.type)
     }
+
+    @Test
+    fun serverInfoReadsButtonsAndConfiguration() {
+        val info = ServerJson.decodeFromString<ServerInfo>(
+            """{"title":"T","buttons":[{"type":"post"},{"type":"level","title":"Charts"},{"type":"room"}],"configuration":{"options":[{"query":"genre","name":"Genre","type":"select","def":"pop","values":[{"name":"pop","title":"Pop"}]},{"query":"f","name":"File","type":"file","def":""}]}}""",
+        )
+        assertEquals(listOf("post", "level", "room"), info.buttons.map { it.type })
+        assertEquals("Charts", info.buttons[1].title)
+        assertEquals(2, info.configuration!!.options.size)
+        assertEquals("file", info.configuration.options[1].type)
+    }
+
+    @Test
+    fun serverInfoWithoutNewFieldsStillParses() {
+        val info = ServerJson.decodeFromString<ServerInfo>("""{"title":"T"}""")
+        assertTrue(info.buttons.isEmpty())
+        assertNull(info.configuration)
+    }
 }
