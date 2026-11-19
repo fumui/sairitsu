@@ -2,17 +2,12 @@ package my.fumui.sairitsu.gameplay
 
 import android.graphics.SurfaceTexture
 import android.view.Surface
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import my.fumui.sairitsu.data.ServerAddress
 import my.fumui.sairitsu.data.ServerApiException
 import my.fumui.sairitsu.data.model.LevelItem
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -1527,20 +1522,58 @@ class GameplayViewModelTest {
         assertEquals(false, vm.canEditOffset)
     }
 
-    /** DataStore's file store cannot rename over an open file on Windows, so the tests keep preferences in memory. */
-    private class MemoryPreferences : DataStore<Preferences> {
-        private val state = MutableStateFlow(emptyPreferences())
-        override val data: Flow<Preferences> = state
+    private fun skinOptions(store: SettingsStore, engine: String, saved: List<SavedSkin>) = GameplayViewModel(
+        server, "lvl", fetcher, runtime, dispatcher, store = store, engine = engine, optionsOnly = true,
+        io = dispatcher, savedSkins = { saved },
+    )
 
-        /** Writes wait for this while it is set. */
-        var writeGate: CompletableDeferred<Unit>? = null
-        var failWrites = false
+    @Test
+    fun optionsShowTheSavedSkinChoices() = test {
+        val store = SettingsStore(MemoryPreferences())
+        store.saveLevelSkin(server.linkAddress, "lvl", SkinSelection.Saved("a"))
+        store.saveEngineSkin("holodori", SkinSelection.Saved("a"))
+        val saved = listOf(SavedSkin("a", "A", "s", emptyMap()))
+        val vm = skinOptions(store, "holodori", saved)
+        advanceUntilIdle()
+        val skins = (vm.state.value as GameplayUiState.Options).skins
+        assertEquals(saved, skins.saved)
+        assertEquals(SkinSelection.Saved("a"), skins.level)
+        assertEquals(SkinSelection.Saved("a"), skins.engine)
+        assertTrue(skins.engineKnown)
+    }
 
-        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
-            writeGate?.await()
-            if (failWrites) throw IOException("disk full")
-            return transform(state.value).also { state.value = it }
-        }
+    @Test
+    fun choosingASkinSavesItAndShowsIt() = test {
+        val store = SettingsStore(MemoryPreferences())
+        val vm = skinOptions(store, "holodori", listOf(SavedSkin("a", "A", "s", emptyMap())))
+        advanceUntilIdle()
+        vm.setLevelSkin(SkinSelection.Original)
+        vm.setEngineSkin(SkinSelection.Saved("a"))
+        advanceUntilIdle()
+        val skins = (vm.state.value as GameplayUiState.Options).skins
+        assertEquals(SkinSelection.Original, skins.level)
+        assertEquals(SkinSelection.Saved("a"), skins.engine)
+        assertEquals(SkinSelection.Original, store.levelSkin(server.linkAddress, "lvl").first())
+        assertEquals(SkinSelection.Saved("a"), store.engineSkin("holodori").first())
+    }
+
+    @Test
+    fun aRemovedSkinShowsAsTheDefault() = test {
+        val store = SettingsStore(MemoryPreferences())
+        store.saveLevelSkin(server.linkAddress, "lvl", SkinSelection.Saved("gone"))
+        store.saveEngineSkin("holodori", SkinSelection.Saved("gone"))
+        val vm = skinOptions(store, "holodori", emptyList())
+        advanceUntilIdle()
+        val skins = (vm.state.value as GameplayUiState.Options).skins
+        assertEquals(SkinSelection.UseEngine, skins.level)
+        assertEquals(SkinSelection.Original, skins.engine)
+    }
+
+    @Test
+    fun unknownEngineHidesTheEnginePicker() = test {
+        val vm = skinOptions(SettingsStore(MemoryPreferences()), "default", emptyList())
+        advanceUntilIdle()
+        assertEquals(false, (vm.state.value as GameplayUiState.Options).skins.engineKnown)
     }
 
     private inner class FakeRuntime : LevelRuntime {

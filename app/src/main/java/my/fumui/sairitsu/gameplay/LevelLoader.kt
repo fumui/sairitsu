@@ -254,22 +254,6 @@ class LevelLoader(
         }
     }
 
-    /** Runs [block] on the response of [call]; cancelling the coroutine cancels the call. */
-    private suspend fun <T> withCall(call: Call, block: (Response) -> T): T = coroutineScope {
-        val watcher = launch(Dispatchers.IO) {
-            try {
-                awaitCancellation()
-            } finally {
-                call.cancel()
-            }
-        }
-        try {
-            call.execute().use(block)
-        } finally {
-            watcher.cancel()
-        }
-    }
-
     /** Downloads [url] into [key], verified against [hash] when not null; one retry. [onBytes]: (bytes so far, total). */
     private suspend fun downloadWithRetry(
         url: String,
@@ -316,5 +300,21 @@ class LevelLoader(
 
     private companion object {
         val SHA1 = Regex("[0-9a-fA-F]{40}")
+    }
+}
+
+/** Runs [block] on the response of [call]; cancelling the coroutine cancels the call. */
+internal suspend fun <T> withCall(call: Call, block: (Response) -> T): T = coroutineScope {
+    val watcher = launch(Dispatchers.IO) {
+        try {
+            awaitCancellation()
+        } finally {
+            call.cancel()
+        }
+    }
+    try {
+        call.execute().use(block)
+    } finally {
+        watcher.cancel()
     }
 }

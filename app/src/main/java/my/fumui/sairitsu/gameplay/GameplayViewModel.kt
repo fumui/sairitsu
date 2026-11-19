@@ -48,6 +48,7 @@ sealed interface GameplayUiState {
         val values: Map<String, Float>,
         val settings: AppSettings,
         val offsets: InputOffsets = InputOffsets(),
+        val skins: SkinPickerState = SkinPickerState(),
     ) : GameplayUiState
 
     /** A callback fault stopped the level (it stays on its last frame); the screen shows [message] and Back. */
@@ -136,6 +137,8 @@ class GameplayViewModel(
     private val addToLibrary: (suspend (LoadedResources) -> Unit)? = null,
     /** Watch: a saved replay (in [replays]) to play back instead of the chart's autoplay; null: the autoplay. */
     private val replay: ReplayRef? = null,
+    /** The skins saved on this device, for the pickers of the options screen. */
+    private val savedSkins: () -> List<SavedSkin> = { emptyList() },
 ) : ViewModel() {
     private val _levelInfo = MutableStateFlow<LevelItem?>(null)
 
@@ -754,6 +757,33 @@ class GameplayViewModel(
         store?.let { viewModelScope.launch(work) { it.saveInputOffset(scope, server.linkAddress, level, value) } }
     }
 
+    /** Level options: saves the skin chosen for this level and shows it. */
+    fun setLevelSkin(selection: SkinSelection) {
+        val s = _state.value as? GameplayUiState.Options ?: return
+        _state.value = s.copy(skins = s.skins.copy(level = selection))
+        store?.let { viewModelScope.launch(work) { it.saveLevelSkin(server.linkAddress, level, selection) } }
+    }
+
+    /** Level options: saves the skin chosen for this level's engine and shows it. */
+    fun setEngineSkin(selection: SkinSelection) {
+        val s = _state.value as? GameplayUiState.Options ?: return
+        _state.value = s.copy(skins = s.skins.copy(engine = selection))
+        store?.let { viewModelScope.launch(work) { it.saveEngineSkin(engine, selection) } }
+    }
+
+    /** The saved choices; one naming a skin that is no longer saved shows as its scope's default. */
+    private suspend fun readSkinPicker(): SkinPickerState {
+        val saved = savedSkins()
+        fun shown(selection: SkinSelection, default: SkinSelection) =
+            if (selection is SkinSelection.Saved && saved.none { it.id == selection.id }) default else selection
+        return SkinPickerState(
+            saved = saved,
+            level = shown(store?.levelSkin(server.linkAddress, level)?.first() ?: SkinSelection.UseEngine, SkinSelection.UseEngine),
+            engine = shown(store?.engineSkin(engine)?.first() ?: SkinSelection.Original, SkinSelection.Original),
+            engineKnown = engine != "default",
+        )
+    }
+
     private suspend fun readPreferences(configuration: File?) {
         engineOptions = try {
             configuration?.takeIf { it.isFile }
@@ -893,6 +923,7 @@ class GameplayViewModel(
                 engineOptions.associate { it.name to (savedOptions[it.name] ?: it.def) },
                 appSettings,
                 inputOffsets,
+                readSkinPicker(),
             )
         }
     } catch (e: CancellationException) {

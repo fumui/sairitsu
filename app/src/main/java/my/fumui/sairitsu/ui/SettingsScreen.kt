@@ -35,15 +35,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.gameplay.AppSettings
+import my.fumui.sairitsu.gameplay.ScopedSkins
 import my.fumui.sairitsu.gameplay.SettingsStore
 import my.fumui.sairitsu.library.Library
 import my.fumui.sairitsu.library.StorageInfo
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-/** Global settings: volumes and offsets, "Save levels I play", "Show FPS", and how much storage downloads use. */
+/** Global settings: volumes and offsets, "Save levels I play", "Show FPS", saved skins and storage use. */
 @Composable
-fun SettingsScreen(settings: SettingsStore, library: Library, onBack: () -> Unit) {
+fun SettingsScreen(settings: SettingsStore, library: Library, skins: ScopedSkins, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val app by settings.settings.collectAsState(initial = null)
     val saveLevels by settings.saveLevelsIPlay.collectAsState(initial = false)
@@ -73,6 +74,8 @@ fun SettingsScreen(settings: SettingsStore, library: Library, onBack: () -> Unit
                     Text("Show FPS", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                     Switch(checked = showFps, onCheckedChange = { on -> scope.launch { settings.setShowFps(on) } })
                 }
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                SkinsSection(skins)
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 storage?.let { info ->
                     Text(

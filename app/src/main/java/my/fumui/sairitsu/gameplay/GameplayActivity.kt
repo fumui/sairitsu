@@ -25,7 +25,9 @@ import my.fumui.sairitsu.app.AppServices
 import my.fumui.sairitsu.app.saveIfWanted
 import my.fumui.sairitsu.data.LevelKey
 import my.fumui.sairitsu.data.ServerAddress
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Loads a level and runs it (Watch) on a SurfaceView. Landscape, immersive, screen kept on. */
@@ -99,8 +101,17 @@ class GameplayActivity : ComponentActivity() {
                 val services = AppServices.get(applicationContext)
                 val loader = if (offline) services.debugOfflineLoader else services.loader
                 val fetcher = object : LevelFetcher {
-                    override suspend fun load(server: ServerAddress, level: String, onProgress: (LoadProgress) -> Unit) =
-                        loader.load(server, level, onProgress)
+                    override suspend fun load(
+                        server: ServerAddress,
+                        level: String,
+                        onProgress: (LoadProgress) -> Unit,
+                    ): LoadedResources {
+                        val loaded = loader.load(server, level, onProgress)
+                        if (render != null) return loaded
+                        return withContext(Dispatchers.IO) {
+                            services.skins.apply(loaded, server.linkAddress, level, services.library.engineNameOf(loaded))
+                        }
+                    }
 
                     override suspend fun engineConfiguration(server: ServerAddress, level: String) =
                         loader.engineConfiguration(server, level)
@@ -125,6 +136,7 @@ class GameplayActivity : ComponentActivity() {
                     replays = services.replays,
                     addToLibrary = { loaded -> addToLibrary(services, req, loaded) },
                     replay = req.replay,
+                    savedSkins = { services.skinLibrary.skins.value },
                 )
             }
         }

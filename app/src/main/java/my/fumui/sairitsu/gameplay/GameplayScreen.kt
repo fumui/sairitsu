@@ -104,7 +104,8 @@ private fun GameplayContent(vm: GameplayViewModel, onBack: () -> Unit) {
         }
         is GameplayUiState.Options -> Surface(Modifier.fillMaxSize()) {
             OptionsScreen(
-                s, onOption = vm::setOption, onSettings = vm::setSettings, onInputOffset = vm::setInputOffset, onBack = onBack,
+                s, onOption = vm::setOption, onSettings = vm::setSettings, onInputOffset = vm::setInputOffset,
+                onLevelSkin = vm::setLevelSkin, onEngineSkin = vm::setEngineSkin, onBack = onBack,
             )
         }
         else -> Surface(Modifier.fillMaxSize()) {

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -125,6 +126,54 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[SHOW_FPS] = on }
     }
 
+    /** The skin chosen for [level] on [server] (a [my.fumui.sairitsu.data.ServerAddress.linkAddress]). */
+    fun levelSkin(server: String, level: String): Flow<SkinSelection> =
+        store.data.map { decodeSkin(it[levelSkinKey(server, level)], SkinSelection.UseEngine) }
+
+    /** The skin chosen for every level of [engine]. */
+    fun engineSkin(engine: String): Flow<SkinSelection> =
+        store.data.map { decodeSkin(it[engineSkinKey(engine)], SkinSelection.Original) }
+
+    /** Saves the level's choice. Following the engine is the default, so it leaves nothing behind. */
+    suspend fun saveLevelSkin(server: String, level: String, selection: SkinSelection) {
+        store.edit { prefs ->
+            val key = levelSkinKey(server, level)
+            if (selection == SkinSelection.UseEngine) prefs.remove(key) else prefs[key] = encodeSkin(selection)
+        }
+    }
+
+    /** Saves the engine's choice. The original skin is the default, so it leaves nothing behind. */
+    suspend fun saveEngineSkin(engine: String, selection: SkinSelection) {
+        store.edit { prefs ->
+            val key = engineSkinKey(engine)
+            if (selection is SkinSelection.Saved) prefs[key] = encodeSkin(selection) else prefs.remove(key)
+        }
+    }
+
+    /** Clears every level and engine choice that names the saved skin [id]. */
+    suspend fun clearSkin(id: String) {
+        val value = encodeSkin(SkinSelection.Saved(id))
+        store.edit { prefs ->
+            prefs.asMap().filter { (key, saved) -> key.name.startsWith(SKIN_PREFIX) && saved == value }.keys
+                .forEach { prefs.remove(stringPreferencesKey(it.name)) }
+        }
+    }
+
+    private fun levelSkinKey(server: String, level: String) = stringPreferencesKey("${SKIN_PREFIX}level|$server|$level")
+
+    private fun engineSkinKey(engine: String) = stringPreferencesKey("${SKIN_PREFIX}engine|$engine")
+
+    private fun encodeSkin(selection: SkinSelection): String = when (selection) {
+        is SkinSelection.Saved -> SAVED_SKIN + selection.id
+        else -> ORIGINAL_SKIN
+    }
+
+    private fun decodeSkin(value: String?, default: SkinSelection): SkinSelection = when {
+        value == ORIGINAL_SKIN -> SkinSelection.Original
+        value != null && value.startsWith(SAVED_SKIN) -> SkinSelection.Saved(value.removePrefix(SAVED_SKIN))
+        else -> default
+    }
+
     private fun optionPrefix(engine: String) = "option|$engine|"
 
     private fun serverOffsetKey(server: String) = floatPreferencesKey("input_offset|server|$server")
@@ -132,6 +181,9 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     private fun levelOffsetKey(server: String, level: String) = floatPreferencesKey("input_offset|level|$server|$level")
 
     private companion object {
+        const val SKIN_PREFIX = "skin|"
+        const val ORIGINAL_SKIN = "original"
+        const val SAVED_SKIN = "saved:"
         val SAVE_LEVELS_I_PLAY = booleanPreferencesKey("save_levels_i_play")
         val SHOW_FPS = booleanPreferencesKey("show_fps")
         val EFFECT_VOLUME = floatPreferencesKey("effect_volume")

@@ -99,6 +99,13 @@ class Library(
         return readDetails(file.readText(Charsets.UTF_8))
     }
 
+    /** The name of the engine a level was loaded with; null when its details are missing or unreadable. */
+    fun engineNameOf(loaded: LoadedResources): String? = try {
+        detailsOf(loaded).item.engine?.name
+    } catch (e: Exception) {
+        null
+    }
+
     /**
      * The level that was [loaded] from [server], for the result screen. Its cover URL is absolute: the cached file of a
      * downloaded level, otherwise the server's. Null when the details are missing or unreadable.

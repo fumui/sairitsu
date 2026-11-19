@@ -16,7 +16,9 @@ import my.fumui.sairitsu.gameplay.RunHistory
 import my.fumui.sairitsu.gameplay.LevelLoader
 import my.fumui.sairitsu.gameplay.ResourceCache
 import my.fumui.sairitsu.gameplay.ResultStore
+import my.fumui.sairitsu.gameplay.ScopedSkins
 import my.fumui.sairitsu.gameplay.SettingsStore
+import my.fumui.sairitsu.gameplay.SkinLibrary
 import my.fumui.sairitsu.library.CollectionStore
 import my.fumui.sairitsu.library.Library
 import my.fumui.sairitsu.library.LibraryDownloader
@@ -88,6 +90,8 @@ class AppServices private constructor(context: Context) {
     }
     val servers = ServerListStore(context)
     val settings = SettingsStore(context)
+    val skinLibrary = SkinLibrary(File(context.filesDir, "skins"), client)
+    val skins = ScopedSkins(skinLibrary, settings)
     val results: ResultStore = DataStoreResultStore(context)
     val runs: RunHistory = FileRunHistory(File(context.filesDir, "runs"))
     val replays = ReplayStore(File(context.filesDir, "replays"))
