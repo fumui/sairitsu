@@ -1,30 +1,51 @@
 package my.fumui.sairitsu.gameplay
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.text.Localizer
+import my.fumui.sairitsu.ui.ItemPicture
+import my.fumui.sairitsu.ui.OptionLabel
 
-/** "Level options" > "Look & sound": per kind, the item for this level and for its engine. */
+private val TILE_WIDTH = 144.dp
+private val PICTURE_HEIGHT = 84.dp
+private val TILE_SHAPE = RoundedCornerShape(12.dp)
+
+/** "Level options" > "Look & sound": per kind, a row of picture tiles for this level and one for its engine. */
 @Composable
 fun ColumnScope.ItemPickers(
     state: ItemPickerState,
+    pictures: ItemPictures,
     localizer: Localizer,
     onLevel: (ItemKind, ItemSelection) -> Unit,
     onEngine: (ItemKind, ItemSelection) -> Unit,
@@ -38,57 +59,91 @@ fun ColumnScope.ItemPickers(
         return
     }
     for (kind in ItemKind.entries) {
-        // The kind's name sits above its pickers so both get the full width ("Use engine's background" must fit).
-        Text(kindName(kind), style = MaterialTheme.typography.titleSmall)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ItemPicker(
-                "This level", levelItemOptions(kind, state.saved, localizer::text),
-                state.level[kind] ?: ItemSelection.UseEngine, { onLevel(kind, it) }, Modifier.weight(1f),
-            )
+        Column(Modifier.fillMaxWidth()) {
+            OptionLabel(kind.label.replaceFirstChar { it.uppercase() })
+            TileRow(
+                "This level", kind, levelItemOptions(kind, state.saved, localizer::text),
+                state.level[kind] ?: ItemSelection.UseEngine, state, pictures,
+            ) { onLevel(kind, it) }
             if (state.engineKnown) {
-                ItemPicker(
-                    "This engine", engineItemOptions(kind, state.saved, localizer::text),
-                    state.engine[kind] ?: ItemSelection.Original, { onEngine(kind, it) }, Modifier.weight(1f),
-                )
+                TileRow(
+                    "This engine", kind, engineItemOptions(kind, state.saved, localizer::text),
+                    state.engine[kind] ?: ItemSelection.Original, state, pictures,
+                ) { onEngine(kind, it) }
             }
         }
     }
 }
 
-/** The kind's heading: its label with a capital. */
-private fun kindName(kind: ItemKind): String = kind.label.replaceFirstChar { it.uppercase() }
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ItemPicker(
-    label: String,
+private fun TileRow(
+    caption: String,
+    kind: ItemKind,
     options: List<Pair<ItemSelection, String>>,
     selected: ItemSelection,
+    state: ItemPickerState,
+    pictures: ItemPictures,
     onSelect: (ItemSelection) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
-        OutlinedTextField(
-            value = options.firstOrNull { it.first == selected }?.second.orEmpty(),
-            onValueChange = {},
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-            readOnly = true,
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            for ((value, title) in options) {
-                DropdownMenuItem(
-                    text = { Text(title) },
-                    onClick = {
-                        expanded = false
-                        onSelect(value)
-                    },
-                )
+    Spacer(Modifier.height(8.dp))
+    Text(caption, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(6.dp))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0))
+    LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(options, key = { _, (choice, _) -> choice.toString() }) { _, (choice, title) ->
+            val item = when (choice) {
+                is ItemSelection.Saved -> state.saved.firstOrNull { it.id == choice.id }
+                ItemSelection.UseEngine -> state.engineItem(kind)
+                ItemSelection.Original -> null
+            }
+            Tile(title, item, kind, pictures, selected = choice == selected) { onSelect(choice) }
+        }
+    }
+}
+
+/** One choice: its picture (or the kind's icon) and title; the selected one has a primary border and a check. */
+@Composable
+private fun Tile(
+    title: String,
+    item: SavedItem?,
+    kind: ItemKind,
+    pictures: ItemPictures,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .width(TILE_WIDTH)
+            .clip(TILE_SHAPE)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .semantics { if (selected) contentDescription = "$title, selected" },
+    ) {
+        Box {
+            ItemPicture(
+                item, kind, pictures,
+                Modifier
+                    .width(TILE_WIDTH)
+                    .height(PICTURE_HEIGHT)
+                    .clip(TILE_SHAPE)
+                    .border(2.dp, if (selected) colors.primary else Color.Transparent, TILE_SHAPE),
+            )
+            if (selected) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(6.dp).size(20.dp).background(colors.primary, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(14.dp), tint = colors.onPrimary)
+                }
             }
         }
+        Text(
+            title,
+            Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (selected) colors.onSurface else colors.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

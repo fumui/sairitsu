@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
@@ -36,23 +37,39 @@ import my.fumui.sairitsu.data.model.SearchOption
 import my.fumui.sairitsu.text.Localizer
 import kotlin.math.roundToInt
 
+/**
+ * One option's control, in the shared row style: the label (and [description], already localized, under it) above
+ * the control, or beside a toggle's switch.
+ */
 @Composable
-fun OptionControl(option: SearchOption, value: OptionState, localizer: Localizer, onChange: (OptionState) -> Unit) {
+fun OptionControl(
+    option: SearchOption,
+    value: OptionState,
+    localizer: Localizer,
+    description: String? = null,
+    onChange: (OptionState) -> Unit,
+) {
     val label = localizer.text(option.name)
     when (value) {
-        is OptionState.Text -> OutlinedTextField(
-            value = value.value,
-            onValueChange = { text -> if (SearchForms.acceptsText(option, text)) onChange(OptionState.Text(text)) },
-            label = { Text(label) },
-            placeholder = option.placeholder?.let { { Text(localizer.text(it)) } },
-            singleLine = option.type == "text",
-            modifier = Modifier.fillMaxWidth(),
-        )
+        is OptionState.Text -> Column(Modifier.fillMaxWidth()) {
+            if (!description.isNullOrBlank()) {
+                OptionLabel(label, description)
+                Spacer(Modifier.height(8.dp))
+            }
+            OutlinedTextField(
+                value = value.value,
+                onValueChange = { text -> if (SearchForms.acceptsText(option, text)) onChange(OptionState.Text(text)) },
+                label = { Text(label) },
+                placeholder = option.placeholder?.let { { Text(localizer.text(it)) } },
+                singleLine = option.type == "text",
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         is OptionState.Toggle -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Column(Modifier.weight(1f).padding(end = 16.dp)) { OptionLabel(label, description) }
             Switch(checked = value.on, onCheckedChange = { onChange(OptionState.Toggle(it)) })
         }
-        is OptionState.Select -> Labeled(label) {
+        is OptionState.Select -> Labeled(label, description) {
             ChipRow {
                 option.values.forEach { choice ->
                     FilterChip(
@@ -63,9 +80,9 @@ fun OptionControl(option: SearchOption, value: OptionState, localizer: Localizer
                 }
             }
         }
-        is OptionState.Multi -> Labeled(label) { MultiControl(option, value, localizer, onChange) }
-        is OptionState.Slider -> SliderControl(option, value, label, onChange)
-        OptionState.Unsupported -> Labeled(label) {
+        is OptionState.Multi -> Labeled(label, description) { MultiControl(option, value, localizer, onChange) }
+        is OptionState.Slider -> SliderControl(option, value, label, description, onChange)
+        OptionState.Unsupported -> Labeled(label, description) {
             Text("Not supported", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -110,12 +127,13 @@ fun RangeControl(
     minOption: SearchOption,
     minValue: OptionState,
     maxValue: OptionState,
+    description: String? = null,
     onChange: (min: Double, max: Double) -> Unit,
 ) {
     val lower = (minValue as? OptionState.Slider)?.value ?: minOption.min ?: 0.0
     val upper = (maxValue as? OptionState.Slider)?.value ?: minOption.max ?: 0.0
     if (SearchForms.usesNumberFields(minOption)) {
-        Labeled(title) {
+        Labeled(title, description) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 RangeNumberField("Min", lower, minOption, Modifier.weight(1f)) { onChange(it, upper) }
                 Text("–", style = MaterialTheme.typography.bodyLarge)
@@ -127,7 +145,10 @@ fun RangeControl(
     val bounds = (minOption.min ?: 0.0).toFloat()..(minOption.max ?: 100.0).toFloat()
     val step = SearchForms.sliderStep(minOption)
     var dragging by remember(lower, upper) { mutableStateOf(lower.toFloat()..upper.toFloat()) }
-    Labeled("$title ${formatRating(snap(dragging.start, bounds.start, step))} – ${formatRating(snap(dragging.endInclusive, bounds.start, step))}") {
+    Labeled(
+        "$title ${formatRating(snap(dragging.start, bounds.start, step))} – ${formatRating(snap(dragging.endInclusive, bounds.start, step))}",
+        description,
+    ) {
         RangeSlider(
             value = dragging,
             onValueChange = { dragging = it },
@@ -177,11 +198,17 @@ private fun RangeNumberField(
 }
 
 @Composable
-private fun SliderControl(option: SearchOption, value: OptionState.Slider, label: String, onChange: (OptionState) -> Unit) {
+private fun SliderControl(
+    option: SearchOption,
+    value: OptionState.Slider,
+    label: String,
+    description: String?,
+    onChange: (OptionState) -> Unit,
+) {
     val bounds = (option.min ?: 0.0).toFloat()..(option.max ?: 100.0).toFloat()
     val step = SearchForms.sliderStep(option)
     var dragging by remember(value) { mutableFloatStateOf(value.value.toFloat()) }
-    Labeled("$label ${formatRating(snap(dragging, bounds.start, step))}") {
+    Labeled("$label ${formatRating(snap(dragging, bounds.start, step))}", description) {
         Slider(
             value = dragging,
             onValueChange = { dragging = it },
@@ -192,11 +219,22 @@ private fun SliderControl(option: SearchOption, value: OptionState.Slider, label
     }
 }
 
+/** The shared label style of every setting: [label] in `bodyLarge`, the [description] (when set) small under it. */
 @Composable
-private fun Labeled(label: String, content: @Composable () -> Unit) {
+fun OptionLabel(label: String, description: String? = null) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        if (!description.isNullOrBlank()) {
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun Labeled(label: String, description: String?, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(4.dp))
+        OptionLabel(label, description)
+        Spacer(Modifier.height(8.dp))
         content()
     }
 }

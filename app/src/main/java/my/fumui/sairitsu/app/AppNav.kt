@@ -464,7 +464,7 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
             CollectionScreen(vm, localizer, player, launchers, cacheFile = services.cache::pathOf, onBack = { nav.popBackStack() })
         }
         composable<SettingsRoute> {
-            SettingsScreen(services.settings, services.library, services.items, onBack = { nav.popBackStack() })
+            SettingsScreen(services.settings, services.library, services.items, services.itemPictures, onBack = { nav.popBackStack() })
         }
     }
 }

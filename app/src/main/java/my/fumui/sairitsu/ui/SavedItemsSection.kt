@@ -4,6 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import my.fumui.sairitsu.gameplay.ItemPictures
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
@@ -31,36 +36,42 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-/** Settings section: the skins, backgrounds, SFX and particles saved on this device, grouped by kind. */
+/** A saved item: its picture, title and a remove action. */
 @Composable
-fun SavedItemsSection(items: ScopedItems) {
+private fun SavedItemRow(item: SavedItem, title: String, pictures: ItemPictures, onRemove: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        ItemPicture(item, item.kind, pictures, Modifier.size(96.dp, 56.dp).clip(RoundedCornerShape(8.dp)))
+        Text(title, Modifier.weight(1f).padding(horizontal = 12.dp), style = MaterialTheme.typography.bodyLarge)
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Outlined.Delete, contentDescription = "Remove $title", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * Settings section: the skins, backgrounds, SFX and particles saved on this device, grouped by kind, each with its
+ * picture.
+ */
+@Composable
+fun SavedItemsSection(items: ScopedItems, pictures: ItemPictures) {
     val all by items.library.items.collectAsState()
     val localizer = remember { Localizer(Localizer.serverLanguage(Locale.getDefault())) }
     var removing by remember { mutableStateOf<SavedItem?>(null) }
     var removeError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Saved items", style = MaterialTheme.typography.titleMedium)
+    SettingsSection("Saved items") {
         for (kind in ItemKind.entries) {
             val group = all.filter { it.kind == kind }
             if (group.isEmpty()) continue
-            Text(
-                kind.plural.replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            for (item in group) {
-                val title = localizer.text(item.title)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    IconButton(onClick = { removing = item }) {
-                        Icon(
-                            Icons.Outlined.Delete,
-                            contentDescription = "Remove $title",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    kind.plural.replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                for (item in group) {
+                    SavedItemRow(item, localizer.text(item.title), pictures) { removing = item }
                 }
             }
         }

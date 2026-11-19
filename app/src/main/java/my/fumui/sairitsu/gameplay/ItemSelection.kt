@@ -23,6 +23,12 @@ data class ItemPickerState(
     val engineKnown: Boolean = false,
 )
 
+/** The saved item of [kind] the engine is set to; null for `Original`, no choice, or an item no longer saved. */
+fun ItemPickerState.engineItem(kind: ItemKind): SavedItem? {
+    val id = (engine[kind] as? ItemSelection.Saved)?.id ?: return null
+    return saved.firstOrNull { it.id == id && it.kind == kind }
+}
+
 /** The saved item to use: the level's choice, else the engine's; null keeps the level's own. */
 fun resolveItemId(level: ItemSelection, engine: ItemSelection): String? = when (level) {
     is ItemSelection.Saved -> level.id

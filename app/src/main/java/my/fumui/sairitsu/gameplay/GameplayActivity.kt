@@ -170,7 +170,7 @@ class GameplayActivity : ComponentActivity() {
         val overlay = ComposeView(this).apply {
             setContent {
                 SairitsuTheme {
-                    GameplayScreen(vm, onBack = ::finish)
+                    GameplayScreen(vm, AppServices.get(applicationContext).itemPictures, onBack = ::finish)
                 }
             }
         }

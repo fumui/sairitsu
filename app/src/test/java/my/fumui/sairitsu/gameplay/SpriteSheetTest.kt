@@ -72,6 +72,26 @@ class SpriteSheetTest {
     }
 
     @Test
+    fun pickDropsLineSprites() {
+        // A 1024x8 judgment line scaled to 128 px tall would be 16384 px wide; lines say nothing about a skin's look.
+        val note = SheetSprite("#NOTE_HEAD_RED", 0.0, 0.0, 400.0, 50.0)
+        val sheet = SpriteSheet(
+            2048, 2048,
+            listOf(SheetSprite("#JUDGMENT_LINE", 0.0, 100.0, 1024.0, 8.0), SheetSprite("pole", 0.0, 200.0, 10.0, 200.0), note),
+        )
+        assertEquals(listOf(note), SpriteSheets.pick(sheet))
+    }
+
+    @Test
+    fun regionSampleSizeKeepsAtLeastTargetHeight() {
+        assertEquals(1, SpriteSheets.regionSampleSize(100))
+        assertEquals(1, SpriteSheets.regionSampleSize(255))
+        assertEquals(2, SpriteSheets.regionSampleSize(256))
+        assertEquals(16, SpriteSheets.regionSampleSize(2048))
+        assertEquals(8, SpriteSheets.regionSampleSize(2047))
+    }
+
+    @Test
     fun pickDropsDuplicateRects() {
         val sheet = SpriteSheet(100, 100, listOf(named("a", 0.0), named("b", 0.0)))
         assertEquals(listOf("a"), SpriteSheets.pick(sheet).map { it.name })
@@ -102,6 +122,33 @@ class SpriteSheetTest {
     fun textureRectRoundsOutwardAndClamps() {
         val sheet = SpriteSheet(100, 100, emptyList())
         assertEquals(TexelRect(1, 2, 12, 100), SpriteSheets.textureRect(SheetSprite(null, 1.5, 2.2, 10.1, 97.9), sheet, 100, 100))
+    }
+
+    private val tile = 144.0 / 84
+
+    @Test
+    fun flatSpritesStackInOneColumn() {
+        // Three wide note sprites stacked are ~2:1, close to the tile, so they fill its width.
+        assertEquals(1, SpriteSheets.columns(List(3) { 853 }, height = 128, gap = 8, boxAspect = tile))
+    }
+
+    @Test
+    fun squareSpritesFormAGrid() {
+        // Five squares: 3 columns x 2 rows draws them larger than one row (5x1) or one column.
+        assertEquals(3, SpriteSheets.columns(List(5) { 128 }, height = 128, gap = 8, boxAspect = tile))
+        assertEquals(1, SpriteSheets.columns(listOf(128), height = 128, gap = 8, boxAspect = tile))
+    }
+
+    @Test
+    fun opaqueBoundsTrimsTransparentEdges() {
+        // 4x3 pixels, opaque only at (1,1) and (2,1).
+        val pixels = IntArray(12).also { it[1 * 4 + 1] = 0xFF00FF00.toInt(); it[1 * 4 + 2] = 0x80FFFFFF.toInt() }
+        assertEquals(TexelRect(1, 1, 3, 2), SpriteSheets.opaqueBounds(pixels, 4, 3))
+    }
+
+    @Test
+    fun opaqueBoundsOfBlankIsNull() {
+        assertNull(SpriteSheets.opaqueBounds(IntArray(6), 3, 2))
     }
 
     @Test

@@ -1,26 +1,10 @@
 package my.fumui.sairitsu.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.gameplay.AppSettings
+import my.fumui.sairitsu.gameplay.ItemPictures
 import my.fumui.sairitsu.gameplay.ScopedItems
 import my.fumui.sairitsu.gameplay.SettingsStore
 import my.fumui.sairitsu.library.Library
@@ -44,7 +29,7 @@ import java.util.Locale
 
 /** Global settings: volumes and offsets, "Save levels I play", "Show FPS", saved items and storage use. */
 @Composable
-fun SettingsScreen(settings: SettingsStore, library: Library, items: ScopedItems, onBack: () -> Unit) {
+fun SettingsScreen(settings: SettingsStore, library: Library, items: ScopedItems, pictures: ItemPictures, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val app by settings.settings.collectAsState(initial = null)
     val saveLevels by settings.saveLevelsIPlay.collectAsState(initial = false)
@@ -53,43 +38,38 @@ fun SettingsScreen(settings: SettingsStore, library: Library, items: ScopedItems
     val entries by library.index.entries.collectAsState()
     LaunchedEffect(entries) { storage = library.storage() }
 
-    Surface(Modifier.fillMaxSize()) {
-        Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back") }
-                Text("Settings", style = MaterialTheme.typography.headlineSmall)
-            }
-            Spacer(Modifier.height(12.dp))
-            Column(Modifier.widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                app?.let { s -> AppSettingsSliders(s) { next: AppSettings -> scope.launch { settings.saveSettings(next) } } }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Save levels I play", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = saveLevels, onCheckedChange = { on -> scope.launch { settings.setSaveLevelsIPlay(on) } })
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Show FPS", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = showFps, onCheckedChange = { on -> scope.launch { settings.setShowFps(on) } })
-                }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                SavedItemsSection(items)
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                storage?.let { info ->
+    SettingsFrame("Settings", onBack) {
+        SettingsSection("Audio & input", first = true) {
+            app?.let { s -> AppSettingsSliders(s) { next: AppSettings -> scope.launch { settings.saveSettings(next) } } }
+        }
+        SettingsSection("General") {
+            SwitchRow("Save levels I play", saveLevels) { on -> scope.launch { settings.setSaveLevelsIPlay(on) } }
+            SwitchRow("Show FPS", showFps) { on -> scope.launch { settings.setShowFps(on) } }
+        }
+        SavedItemsSection(items, pictures)
+        SettingsSection("Storage") {
+            storage?.let { info ->
+                Column {
                     Text(
                         "%d levels downloaded, %s".format(Locale.ROOT, info.levels, megabytes(info.libraryBytes)),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
                         "Cache: %s".format(Locale.ROOT, megabytes(info.cacheBytes)),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 16.dp)) { OptionLabel(label) }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

@@ -21,6 +21,7 @@ import my.fumui.sairitsu.gameplay.ResultStore
 import my.fumui.sairitsu.gameplay.ScopedItems
 import my.fumui.sairitsu.gameplay.SettingsStore
 import my.fumui.sairitsu.gameplay.ItemLibrary
+import my.fumui.sairitsu.gameplay.ItemPictures
 import my.fumui.sairitsu.gameplay.ItemMigration
 import my.fumui.sairitsu.library.CollectionStore
 import my.fumui.sairitsu.library.Library
@@ -105,6 +106,7 @@ class AppServices private constructor(context: Context) {
     val settings = SettingsStore(context)
     val itemLibrary = ItemLibrary(File(context.filesDir, "skins"), client)
     val items = ScopedItems(itemLibrary, settings)
+    val itemPictures = ItemPictures(itemLibrary)
 
     init {
         // Saved skin choices also apply to the background and particles migrated from the skin; retried next start on failure.

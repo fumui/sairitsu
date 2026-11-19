@@ -104,8 +104,11 @@ fun ServerHubScreen(
                     Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout).padding(horizontal = 48.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
-                        Heading(title, ready?.description?.let(localizer::text), catalog)
+                    // Centered when it fits; a long description scrolls instead of being cut off.
+                    Box(Modifier.weight(1f).fillMaxHeight().padding(end = 32.dp), contentAlignment = Alignment.CenterStart) {
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 48.dp)) {
+                            Heading(title, ready?.description?.let(localizer::text), catalog)
+                        }
                     }
                     Column(
                         Modifier.width(300.dp).verticalScroll(rememberScrollState()),
@@ -155,8 +158,6 @@ private fun Heading(title: String, description: String?, catalog: CatalogSummary
                 description,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         catalogLine(catalog)?.let { line ->

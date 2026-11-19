@@ -38,6 +38,32 @@ class ItemSelectionTest {
         assertEquals(2, engineItemOptions(ItemKind.Skin, saved) { it }.size)
     }
 
+    private val skinA = SavedItem("a", ItemKind.Skin, "Skin A", "srv", emptyMap())
+
+    @Test
+    fun engineItemResolvesSaved() {
+        val state = ItemPickerState(saved = listOf(skinA), engine = mapOf(ItemKind.Skin to ItemSelection.Saved("a")))
+        assertEquals(skinA, state.engineItem(ItemKind.Skin))
+    }
+
+    @Test
+    fun engineItemForOriginalIsNull() {
+        assertNull(ItemPickerState(saved = listOf(skinA), engine = mapOf(ItemKind.Skin to ItemSelection.Original)).engineItem(ItemKind.Skin))
+        assertNull(ItemPickerState(saved = listOf(skinA)).engineItem(ItemKind.Skin))
+    }
+
+    @Test
+    fun engineItemForMissingIdIsNull() {
+        val state = ItemPickerState(saved = listOf(skinA), engine = mapOf(ItemKind.Skin to ItemSelection.Saved("gone")))
+        assertNull(state.engineItem(ItemKind.Skin))
+    }
+
+    @Test
+    fun engineItemOfOtherKindIsNull() {
+        val state = ItemPickerState(saved = listOf(skinA), engine = mapOf(ItemKind.Background to ItemSelection.Saved("a")))
+        assertNull(state.engineItem(ItemKind.Background))
+    }
+
     @Test
     fun ofWireMapsTypes() {
         assertEquals(ItemKind.Sfx, ItemKind.ofWire("effect"))

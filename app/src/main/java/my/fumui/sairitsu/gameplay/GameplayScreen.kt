@@ -59,7 +59,7 @@ import java.util.Locale
 
 /** The overlay above the gameplay SurfaceView: opaque while loading or failed, see-through while the level runs. */
 @Composable
-fun GameplayScreen(vm: GameplayViewModel, onBack: () -> Unit) {
+fun GameplayScreen(vm: GameplayViewModel, pictures: ItemPictures, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message.collectAsStateWithLifecycle()
     LaunchedEffect(message) {
@@ -69,13 +69,13 @@ fun GameplayScreen(vm: GameplayViewModel, onBack: () -> Unit) {
         }
     }
     Box(Modifier.fillMaxSize()) {
-        GameplayContent(vm, onBack)
+        GameplayContent(vm, pictures, onBack)
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing))
     }
 }
 
 @Composable
-private fun GameplayContent(vm: GameplayViewModel, onBack: () -> Unit) {
+private fun GameplayContent(vm: GameplayViewModel, pictures: ItemPictures, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     when (val s = state) {
         // The level draws on the SurfaceView underneath; the built-in bottom bar is drawn here, above it.
@@ -102,12 +102,10 @@ private fun GameplayContent(vm: GameplayViewModel, onBack: () -> Unit) {
                 Box(Modifier.padding(24.dp)) { Stopped(s.message, onBack) }
             }
         }
-        is GameplayUiState.Options -> Surface(Modifier.fillMaxSize()) {
-            OptionsScreen(
-                s, onOption = vm::setOption, onSettings = vm::setSettings, onInputOffset = vm::setInputOffset,
-                onLevelItem = vm::setLevelItem, onEngineItem = vm::setEngineItem, onBack = onBack,
-            )
-        }
+        is GameplayUiState.Options -> OptionsScreen(
+            s, pictures, onOption = vm::setOption, onSettings = vm::setSettings, onInputOffset = vm::setInputOffset,
+            onLevelItem = vm::setLevelItem, onEngineItem = vm::setEngineItem, onBack = onBack,
+        )
         else -> Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                 when (s) {

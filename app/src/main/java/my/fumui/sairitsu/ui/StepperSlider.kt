@@ -88,7 +88,7 @@ fun StepperSlider(
 
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             if (default != null && scale.snap(default) != current) {
                 IconButton(onClick = { scale.snap(default).let { current = it; commit(it) } }, Modifier.size(36.dp)) {
                     Icon(
@@ -114,6 +114,13 @@ fun StepperSlider(
                 )
             }
         }
+        if (description != null) {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -138,13 +145,6 @@ fun StepperSlider(
             RepeatButton(Icons.Outlined.Add, "Increase $label", enabled = index < scale.count, onStep = { stepBy(1) }) {
                 commit(current)
             }
-        }
-        if (description != null) {
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 
