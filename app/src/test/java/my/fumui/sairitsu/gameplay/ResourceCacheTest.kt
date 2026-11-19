@@ -184,4 +184,15 @@ class ResourceCacheTest {
         assertTrue(cache.file("k")!!.readText() in setOf("aaaaAAAA", "bbbb"))
         assertEquals(1, dir.listFiles()!!.size)
     }
+
+    @Test
+    fun keysListsEntries() {
+        val dir = tmp.newFolder("keys")
+        val cache = ResourceCache(dir)
+        assertEquals(emptySet<String>(), cache.keys())
+        cache.put("k1", null) { it.write(1) }
+        cache.put("k2", null) { it.write(2) }
+        dir.resolve("stale.tmp").writeText("x")
+        assertEquals(setOf("k1", "k2"), cache.keys())
+    }
 }

@@ -62,6 +62,8 @@ data class ItemSummary(
     val subtitle: String = "",
     val author: String = "",
     val thumbnail: Srl? = null,
+    /** The full picture of a background; other kinds have only a thumbnail. */
+    val image: Srl? = null,
     val time: Long = 0,
 )
 

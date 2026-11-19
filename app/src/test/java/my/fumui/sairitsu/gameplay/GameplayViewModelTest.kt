@@ -1522,58 +1522,64 @@ class GameplayViewModelTest {
         assertEquals(false, vm.canEditOffset)
     }
 
-    private fun skinOptions(store: SettingsStore, engine: String, saved: List<SavedSkin>) = GameplayViewModel(
+    private fun itemOptions(store: SettingsStore, engine: String, saved: List<SavedItem>) = GameplayViewModel(
         server, "lvl", fetcher, runtime, dispatcher, store = store, engine = engine, optionsOnly = true,
-        io = dispatcher, savedSkins = { saved },
+        io = dispatcher, savedItems = { saved },
     )
 
     @Test
-    fun optionsShowTheSavedSkinChoices() = test {
+    fun levelItemChoiceSavedPerKind() = test {
         val store = SettingsStore(MemoryPreferences())
-        store.saveLevelSkin(server.linkAddress, "lvl", SkinSelection.Saved("a"))
-        store.saveEngineSkin("holodori", SkinSelection.Saved("a"))
-        val saved = listOf(SavedSkin("a", "A", "s", emptyMap()))
-        val vm = skinOptions(store, "holodori", saved)
+        val saved = listOf(SavedItem("b", ItemKind.Background, "B", "s", emptyMap()))
+        val vm = itemOptions(store, "holodori", saved)
         advanceUntilIdle()
-        val skins = (vm.state.value as GameplayUiState.Options).skins
-        assertEquals(saved, skins.saved)
-        assertEquals(SkinSelection.Saved("a"), skins.level)
-        assertEquals(SkinSelection.Saved("a"), skins.engine)
-        assertTrue(skins.engineKnown)
+        vm.setLevelItem(ItemKind.Background, ItemSelection.Saved("b"))
+        vm.setEngineItem(ItemKind.Background, ItemSelection.Saved("b"))
+        advanceUntilIdle()
+        val items = (vm.state.value as GameplayUiState.Options).items
+        assertEquals(ItemSelection.Saved("b"), items.level[ItemKind.Background])
+        assertEquals(ItemSelection.Saved("b"), items.engine[ItemKind.Background])
+        assertEquals(ItemSelection.Original, items.engine[ItemKind.Skin])
+        assertEquals(ItemSelection.Original, store.engineItem(ItemKind.Skin, "holodori").first())
+        assertEquals(ItemSelection.UseEngine, items.level[ItemKind.Skin])
+        assertEquals(ItemSelection.Saved("b"), store.levelItem(ItemKind.Background, server.linkAddress, "lvl").first())
+        assertEquals(ItemSelection.UseEngine, store.levelItem(ItemKind.Skin, server.linkAddress, "lvl").first())
+        assertEquals(ItemSelection.Saved("b"), store.engineItem(ItemKind.Background, "holodori").first())
     }
 
     @Test
-    fun choosingASkinSavesItAndShowsIt() = test {
+    fun removedItemShowsDefault() = test {
         val store = SettingsStore(MemoryPreferences())
-        val vm = skinOptions(store, "holodori", listOf(SavedSkin("a", "A", "s", emptyMap())))
+        store.saveLevelItem(ItemKind.Particles, server.linkAddress, "lvl", ItemSelection.Saved("gone"))
+        store.saveEngineItem(ItemKind.Particles, "holodori", ItemSelection.Saved("gone"))
+        val vm = itemOptions(store, "holodori", emptyList())
         advanceUntilIdle()
-        vm.setLevelSkin(SkinSelection.Original)
-        vm.setEngineSkin(SkinSelection.Saved("a"))
-        advanceUntilIdle()
-        val skins = (vm.state.value as GameplayUiState.Options).skins
-        assertEquals(SkinSelection.Original, skins.level)
-        assertEquals(SkinSelection.Saved("a"), skins.engine)
-        assertEquals(SkinSelection.Original, store.levelSkin(server.linkAddress, "lvl").first())
-        assertEquals(SkinSelection.Saved("a"), store.engineSkin("holodori").first())
+        val items = (vm.state.value as GameplayUiState.Options).items
+        assertEquals(ItemSelection.UseEngine, items.level[ItemKind.Particles])
+        assertEquals(ItemSelection.Original, items.engine[ItemKind.Particles])
     }
 
     @Test
-    fun aRemovedSkinShowsAsTheDefault() = test {
+    fun optionsShowTheSavedItemChoices() = test {
         val store = SettingsStore(MemoryPreferences())
-        store.saveLevelSkin(server.linkAddress, "lvl", SkinSelection.Saved("gone"))
-        store.saveEngineSkin("holodori", SkinSelection.Saved("gone"))
-        val vm = skinOptions(store, "holodori", emptyList())
+        store.saveLevelItem(ItemKind.Skin, server.linkAddress, "lvl", ItemSelection.Saved("a"))
+        store.saveEngineItem(ItemKind.Skin, "holodori", ItemSelection.Saved("a"))
+        val saved = listOf(SavedItem("a", ItemKind.Skin, "A", "s", emptyMap()))
+        val vm = itemOptions(store, "holodori", saved)
         advanceUntilIdle()
-        val skins = (vm.state.value as GameplayUiState.Options).skins
-        assertEquals(SkinSelection.UseEngine, skins.level)
-        assertEquals(SkinSelection.Original, skins.engine)
+        val items = (vm.state.value as GameplayUiState.Options).items
+        assertEquals(saved, items.saved)
+        assertEquals(ItemSelection.Saved("a"), items.level[ItemKind.Skin])
+        assertEquals(ItemSelection.Saved("a"), items.engine[ItemKind.Skin])
+        assertEquals(ItemSelection.UseEngine, items.level[ItemKind.Background])
+        assertTrue(items.engineKnown)
     }
 
     @Test
     fun unknownEngineHidesTheEnginePicker() = test {
-        val vm = skinOptions(SettingsStore(MemoryPreferences()), "default", emptyList())
+        val vm = itemOptions(SettingsStore(MemoryPreferences()), "default", emptyList())
         advanceUntilIdle()
-        assertEquals(false, (vm.state.value as GameplayUiState.Options).skins.engineKnown)
+        assertEquals(false, (vm.state.value as GameplayUiState.Options).items.engineKnown)
     }
 
     private inner class FakeRuntime : LevelRuntime {

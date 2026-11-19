@@ -1,5 +1,6 @@
 package my.fumui.sairitsu.app
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +31,11 @@ import my.fumui.sairitsu.data.ItemApi
 import my.fumui.sairitsu.data.LevelKey
 import my.fumui.sairitsu.data.ServerAddress
 import my.fumui.sairitsu.data.model.LevelItem
+import my.fumui.sairitsu.gameplay.GameplayActivity
+import my.fumui.sairitsu.gameplay.GameplayIntent
 import my.fumui.sairitsu.gameplay.GameplayMode
+import my.fumui.sairitsu.gameplay.ItemKind
+import my.fumui.sairitsu.library.LevelStats
 import my.fumui.sairitsu.library.Membership
 import my.fumui.sairitsu.library.collectionNameError
 import my.fumui.sairitsu.library.membership
@@ -53,12 +58,14 @@ import my.fumui.sairitsu.ui.PickerScreen
 import my.fumui.sairitsu.ui.PickerViewModel
 import my.fumui.sairitsu.ui.PostsScreen
 import my.fumui.sairitsu.ui.PostsViewModel
+import my.fumui.sairitsu.ui.previewLevels
 import my.fumui.sairitsu.ui.ServerConfigScreen
 import my.fumui.sairitsu.ui.ServerConfigViewModel
 import my.fumui.sairitsu.ui.ServerHubScreen
 import my.fumui.sairitsu.ui.ServerHubViewModel
-import my.fumui.sairitsu.ui.ServerSkinsScreen
-import my.fumui.sairitsu.ui.ServerSkinsViewModel
+import my.fumui.sairitsu.ui.ServerItemsScreen
+import my.fumui.sairitsu.ui.ServerItemsViewModel
+import my.fumui.sairitsu.ui.itemKind
 import my.fumui.sairitsu.ui.ServersScreen
 import my.fumui.sairitsu.ui.ServersViewModel
 import my.fumui.sairitsu.ui.SettingsScreen
@@ -85,7 +92,7 @@ data class ServerHubRoute(val address: String)
 data class ServerConfigRoute(val address: String)
 
 @Serializable
-data class ServerSkinsRoute(val address: String)
+data class ServerItemsRoute(val address: String, val kind: String)
 
 @Serializable
 data class ServerPostsRoute(val address: String)
@@ -171,12 +178,13 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
                 message = message,
                 onMessageShown = { entry.savedStateHandle[HUB_MESSAGE] = null },
                 onSection = { section ->
+                    val kind = section.itemKind
                     nav.navigate(
-                        when (section) {
-                            HubSection.Levels -> BrowseRoute(server.baseUrl.toString())
-                            HubSection.Posts -> ServerPostsRoute(address)
-                            HubSection.Skins -> ServerSkinsRoute(address)
-                            HubSection.Configuration -> ServerConfigRoute(address)
+                        when {
+                            section == HubSection.Levels -> BrowseRoute(server.baseUrl.toString())
+                            section == HubSection.Posts -> ServerPostsRoute(address)
+                            kind != null -> ServerItemsRoute(address, kind.wireType)
+                            else -> ServerConfigRoute(address)
                         },
                     )
                 },
@@ -196,19 +204,38 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
             )
             PostsScreen(vm, server, localizer, onBack = { nav.popBackStack() })
         }
-        composable<ServerSkinsRoute> { entry ->
-            val address = entry.toRoute<ServerSkinsRoute>().address
+        composable<ServerItemsRoute> { entry ->
+            val route = entry.toRoute<ServerItemsRoute>()
+            val address = route.address
             val server = remember(address) { ServerAddress.parse(address) }
-            if (server == null) {
+            val kind = remember(route.kind) { ItemKind.ofWire(route.kind) }
+            if (server == null || kind == null) {
                 Placeholder(PickerViewModel.INVALID_ADDRESS)
                 return@composable
             }
-            val vm: ServerSkinsViewModel = viewModel(
+            val vm: ServerItemsViewModel = viewModel(
                 factory = viewModelFactory {
-                    initializer { ServerSkinsViewModel(server, ItemApi(server, services.client), services.skinLibrary) }
+                    initializer { ServerItemsViewModel(server, kind, ItemApi(server, services.client), services.itemLibrary) }
                 },
             )
-            ServerSkinsScreen(vm, server, localizer, onBack = { nav.popBackStack() })
+            val entries by services.library.index.entries.collectAsState()
+            var stats by remember { mutableStateOf<Map<LevelKey, LevelStats>>(emptyMap()) }
+            LaunchedEffect(Unit) { stats = services.results.stats() }
+            val levels = remember(entries, stats) { previewLevels(server.linkAddress, entries, stats) }
+            ServerItemsScreen(
+                vm, server, localizer,
+                levels = levels,
+                onWatch = { level, preview ->
+                    val intent = Intent(context, GameplayActivity::class.java)
+                    GameplayIntent.extras(
+                        server, level.entry.name, GameplayMode.Watch, level.entry.engineName,
+                        optionsScreen = false, preview = preview,
+                    ).forEach { (key, value) -> intent.putExtra(key, value) }
+                    context.startActivity(intent)
+                },
+                onBrowse = { nav.navigate(BrowseRoute(server.baseUrl.toString())) },
+                onBack = { nav.popBackStack() },
+            )
         }
         composable<ServerConfigRoute> { entry ->
             val address = entry.toRoute<ServerConfigRoute>().address
@@ -395,7 +422,7 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
             CollectionScreen(vm, localizer, player, launchers, cacheFile = services.cache::pathOf, onBack = { nav.popBackStack() })
         }
         composable<SettingsRoute> {
-            SettingsScreen(services.settings, services.library, services.skins, onBack = { nav.popBackStack() })
+            SettingsScreen(services.settings, services.library, services.items, onBack = { nav.popBackStack() })
         }
     }
 }

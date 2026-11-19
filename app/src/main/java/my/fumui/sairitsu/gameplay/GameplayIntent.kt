@@ -43,6 +43,8 @@ data class GameplayRequest(
     val optionsScreen: Boolean = false,
     /** Watch a saved replay instead of the chart's autoplay; always null in Play. */
     val replay: ReplayRef? = null,
+    /** An item to try for this run only, in place of the saved choice of its kind. */
+    val preview: ItemPreview? = null,
 )
 
 /** Intent extras of [GameplayActivity]. Pure, so it is unit-testable. */
@@ -56,6 +58,8 @@ object GameplayIntent {
     const val REPLAY = "replay"
     const val REPLAY_LEVEL_DATA = "replayLevelData"
     const val REPLAY_ENGINE = "replayEngine"
+    const val PREVIEW_KIND = "previewKind"
+    const val PREVIEW_ID = "previewId"
 
     // Debug-only extras, honoured only through the DebugGameplayEntry alias.
     const val OFFLINE = "offline"
@@ -91,6 +95,7 @@ object GameplayIntent {
         engine: String? = null,
         optionsScreen: Boolean = false,
         replay: ReplayRef? = null,
+        preview: ItemPreview? = null,
     ): Map<String, String> = buildMap {
         put(SERVER, server.baseUrl.toString().trimEnd('/'))
         put(LEVEL, level)
@@ -101,6 +106,10 @@ object GameplayIntent {
             put(REPLAY, replay.id)
             replay.levelData?.let { put(REPLAY_LEVEL_DATA, it) }
             replay.engine?.let { put(REPLAY_ENGINE, it) }
+        }
+        if (preview != null) {
+            put(PREVIEW_KIND, preview.kind.wireType)
+            put(PREVIEW_ID, preview.id)
         }
     }
 
@@ -116,8 +125,12 @@ object GameplayIntent {
             if (mode != GameplayMode.Watch) return null
             ReplayRef(it, extra(REPLAY_LEVEL_DATA), extra(REPLAY_ENGINE))
         }
+        val previewKind = extra(PREVIEW_KIND)?.let(ItemKind::ofWire)
+        val previewId = extra(PREVIEW_ID)?.takeIf { it.isNotBlank() }
+        val preview = if (previewKind != null && previewId != null) ItemPreview(previewKind, previewId) else null
         return GameplayRequest(
             server, level, mode, extra(ENGINE)?.takeIf { it.isNotBlank() }, extra(SCREEN) == SCREEN_OPTIONS, replay,
+            preview,
         )
     }
 }

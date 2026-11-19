@@ -24,9 +24,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -171,5 +174,8 @@ private fun HubSection.icon(): ImageVector = when (this) {
     HubSection.Levels -> Icons.Outlined.MusicNote
     HubSection.Posts -> Icons.AutoMirrored.Outlined.Article
     HubSection.Skins -> Icons.Outlined.Palette
+    HubSection.Backgrounds -> Icons.Outlined.Wallpaper
+    HubSection.Sfx -> Icons.Outlined.GraphicEq
+    HubSection.Particles -> Icons.Outlined.AutoAwesome
     HubSection.Configuration -> Icons.Outlined.Tune
 }

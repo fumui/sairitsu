@@ -109,7 +109,9 @@ class GameplayActivity : ComponentActivity() {
                         val loaded = loader.load(server, level, onProgress)
                         if (render != null) return loaded
                         return withContext(Dispatchers.IO) {
-                            services.skins.apply(loaded, server.linkAddress, level, services.library.engineNameOf(loaded))
+                            services.items.apply(
+                                loaded, server.linkAddress, level, services.library.engineNameOf(loaded), preview = req.preview,
+                            )
                         }
                     }
 
@@ -136,7 +138,7 @@ class GameplayActivity : ComponentActivity() {
                     replays = services.replays,
                     addToLibrary = { loaded -> addToLibrary(services, req, loaded) },
                     replay = req.replay,
-                    savedSkins = { services.skinLibrary.skins.value },
+                    savedItems = { services.itemLibrary.items.value },
                 )
             }
         }

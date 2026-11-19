@@ -63,12 +63,8 @@ fun PostsScreen(vm: PostsViewModel, server: ServerAddress, localizer: Localizer,
             HorizontalDivider()
             Row(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(LIST_WEIGHT).fillMaxSize()) {
-                    if (posts.isEmpty() && paged.end) {
-                        Text(
-                            "This server has no posts",
-                            Modifier.align(Alignment.Center).padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    if (posts.isEmpty()) {
+                        EmptyPagerState(paged, "This server has no posts", vm.pager::retry, Modifier.align(Alignment.Center))
                     } else {
                         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                             items(posts, key = { "item:" + it.name }) { post ->

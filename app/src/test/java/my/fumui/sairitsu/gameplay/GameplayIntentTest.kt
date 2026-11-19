@@ -51,6 +51,24 @@ class GameplayIntentTest {
     }
 
     @Test
+    fun previewRoundTrips() {
+        val preview = ItemPreview(ItemKind.Background, "x")
+        val extras = GameplayIntent.extras(server, "lvl", GameplayMode.Watch, preview = preview)
+        assertEquals(preview, GameplayIntent.parse(extras::get)?.preview)
+    }
+
+    @Test
+    fun noPreviewByDefault() {
+        assertNull(GameplayIntent.parse(GameplayIntent.extras(server, "lvl", GameplayMode.Watch)::get)?.preview)
+        val bad = GameplayIntent.extras(server, "lvl", GameplayMode.Watch) +
+            (GameplayIntent.PREVIEW_KIND to "room") + (GameplayIntent.PREVIEW_ID to "x")
+        assertNull(GameplayIntent.parse(bad::get)?.preview)
+        val blank = GameplayIntent.extras(server, "lvl", GameplayMode.Watch) +
+            (GameplayIntent.PREVIEW_KIND to "skin") + (GameplayIntent.PREVIEW_ID to " ")
+        assertNull(GameplayIntent.parse(blank::get)?.preview)
+    }
+
+    @Test
     fun replayWithPlayModeIsRejected() {
         val ref = ReplayRef("0b6e2f0a-7d36-4c1c-9a53-6f3f4d2c1a10", "a", "b")
         assertNull(GameplayIntent.parse(GameplayIntent.extras(server, "lvl", GameplayMode.Play, replay = ref)::get))

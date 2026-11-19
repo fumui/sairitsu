@@ -48,7 +48,7 @@ sealed interface GameplayUiState {
         val values: Map<String, Float>,
         val settings: AppSettings,
         val offsets: InputOffsets = InputOffsets(),
-        val skins: SkinPickerState = SkinPickerState(),
+        val items: ItemPickerState = ItemPickerState(),
     ) : GameplayUiState
 
     /** A callback fault stopped the level (it stays on its last frame); the screen shows [message] and Back. */
@@ -137,8 +137,8 @@ class GameplayViewModel(
     private val addToLibrary: (suspend (LoadedResources) -> Unit)? = null,
     /** Watch: a saved replay (in [replays]) to play back instead of the chart's autoplay; null: the autoplay. */
     private val replay: ReplayRef? = null,
-    /** The skins saved on this device, for the pickers of the options screen. */
-    private val savedSkins: () -> List<SavedSkin> = { emptyList() },
+    /** The items saved on this device, for the pickers of the options screen. */
+    private val savedItems: () -> List<SavedItem> = { emptyList() },
 ) : ViewModel() {
     private val _levelInfo = MutableStateFlow<LevelItem?>(null)
 
@@ -757,29 +757,33 @@ class GameplayViewModel(
         store?.let { viewModelScope.launch(work) { it.saveInputOffset(scope, server.linkAddress, level, value) } }
     }
 
-    /** Level options: saves the skin chosen for this level and shows it. */
-    fun setLevelSkin(selection: SkinSelection) {
+    /** Level options: saves the [kind] item chosen for this level and shows it. */
+    fun setLevelItem(kind: ItemKind, selection: ItemSelection) {
         val s = _state.value as? GameplayUiState.Options ?: return
-        _state.value = s.copy(skins = s.skins.copy(level = selection))
-        store?.let { viewModelScope.launch(work) { it.saveLevelSkin(server.linkAddress, level, selection) } }
+        _state.value = s.copy(items = s.items.copy(level = s.items.level + (kind to selection)))
+        store?.let { viewModelScope.launch(work) { it.saveLevelItem(kind, server.linkAddress, level, selection) } }
     }
 
-    /** Level options: saves the skin chosen for this level's engine and shows it. */
-    fun setEngineSkin(selection: SkinSelection) {
+    /** Level options: saves the [kind] item chosen for this level's engine and shows it. */
+    fun setEngineItem(kind: ItemKind, selection: ItemSelection) {
         val s = _state.value as? GameplayUiState.Options ?: return
-        _state.value = s.copy(skins = s.skins.copy(engine = selection))
-        store?.let { viewModelScope.launch(work) { it.saveEngineSkin(engine, selection) } }
+        _state.value = s.copy(items = s.items.copy(engine = s.items.engine + (kind to selection)))
+        store?.let { viewModelScope.launch(work) { it.saveEngineItem(kind, engine, selection) } }
     }
 
-    /** The saved choices; one naming a skin that is no longer saved shows as its scope's default. */
-    private suspend fun readSkinPicker(): SkinPickerState {
-        val saved = savedSkins()
-        fun shown(selection: SkinSelection, default: SkinSelection) =
-            if (selection is SkinSelection.Saved && saved.none { it.id == selection.id }) default else selection
-        return SkinPickerState(
+    /** The saved choices per kind; one naming an item that is no longer saved shows as its scope's default. */
+    private suspend fun readItemPickers(): ItemPickerState {
+        val saved = savedItems()
+        fun shown(selection: ItemSelection, default: ItemSelection) =
+            if (selection is ItemSelection.Saved && saved.none { it.id == selection.id }) default else selection
+        return ItemPickerState(
             saved = saved,
-            level = shown(store?.levelSkin(server.linkAddress, level)?.first() ?: SkinSelection.UseEngine, SkinSelection.UseEngine),
-            engine = shown(store?.engineSkin(engine)?.first() ?: SkinSelection.Original, SkinSelection.Original),
+            level = ItemKind.entries.associateWith { kind ->
+                shown(store?.levelItem(kind, server.linkAddress, level)?.first() ?: ItemSelection.UseEngine, ItemSelection.UseEngine)
+            },
+            engine = ItemKind.entries.associateWith { kind ->
+                shown(store?.engineItem(kind, engine)?.first() ?: ItemSelection.Original, ItemSelection.Original)
+            },
             engineKnown = engine != "default",
         )
     }
@@ -923,7 +927,7 @@ class GameplayViewModel(
                 engineOptions.associate { it.name to (savedOptions[it.name] ?: it.def) },
                 appSettings,
                 inputOffsets,
-                readSkinPicker(),
+                readItemPickers(),
             )
         }
     } catch (e: CancellationException) {

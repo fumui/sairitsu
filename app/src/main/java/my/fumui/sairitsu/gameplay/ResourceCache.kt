@@ -108,6 +108,10 @@ class ResourceCache(private val root: File, private val maxBytes: Long = 2L shl 
     @Synchronized
     fun has(key: String): Boolean = entry(key).isFile
 
+    /** The keys of every entry. */
+    @Synchronized
+    fun keys(): Set<String> = entries().mapTo(HashSet()) { it.name }
+
     /** Deletes the entries for [keys]; missing keys are ignored. */
     @Synchronized
     fun delete(keys: Set<String>) {

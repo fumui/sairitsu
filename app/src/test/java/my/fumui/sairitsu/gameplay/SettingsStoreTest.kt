@@ -3,6 +3,7 @@ package my.fumui.sairitsu.gameplay
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -95,5 +96,73 @@ class SettingsStoreTest {
             AppSettings(effectVolume = 0.5f, bgmVolume = 0.75f, audioOffset = 0.02f, inputOffset = -0.007f),
             store.settings.first(),
         )
+    }
+
+    @Test
+    fun kindsAreIndependent() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        store.saveLevelItem(ItemKind.Background, "s", "l", ItemSelection.Saved("b"))
+        assertEquals(ItemSelection.Saved("b"), store.levelItem(ItemKind.Background, "s", "l").first())
+        assertEquals(ItemSelection.UseEngine, store.levelItem(ItemKind.Skin, "s", "l").first())
+        store.saveEngineItem(ItemKind.Sfx, "e", ItemSelection.Saved("x"))
+        assertEquals(ItemSelection.Saved("x"), store.engineItem(ItemKind.Sfx, "e").first())
+        assertEquals(ItemSelection.Original, store.engineItem(ItemKind.Particles, "e").first())
+    }
+
+    @Test
+    fun skinKeysUnchanged() = runBlocking {
+        val memory = MemoryStore()
+        memory.updateData {
+            it.toMutablePreferences().apply {
+                this[stringPreferencesKey("skin|level|s|l")] = "saved:old"
+                this[stringPreferencesKey("skin|engine|e")] = "original"
+            }
+        }
+        val store = SettingsStore(memory)
+        assertEquals(ItemSelection.Saved("old"), store.levelItem(ItemKind.Skin, "s", "l").first())
+        assertEquals(ItemSelection.Original, store.engineItem(ItemKind.Skin, "e").first())
+    }
+
+    @Test
+    fun clearItemClearsAllKindsAndScopes() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        val gone = ItemSelection.Saved("gone")
+        val kept = ItemSelection.Saved("kept")
+        for (kind in ItemKind.entries) {
+            store.saveLevelItem(kind, "s", "l", gone)
+            store.saveEngineItem(kind, "e", gone)
+            store.saveLevelItem(kind, "s", "other", kept)
+        }
+        store.clearItem("gone")
+        for (kind in ItemKind.entries) {
+            assertEquals(ItemSelection.UseEngine, store.levelItem(kind, "s", "l").first())
+            assertEquals(ItemSelection.Original, store.engineItem(kind, "e").first())
+            assertEquals(kept, store.levelItem(kind, "s", "other").first())
+        }
+    }
+
+    @Test
+    fun skinChoicesListsSkinChoices() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        store.saveLevelItem(ItemKind.Skin, "srv", "lvl", ItemSelection.Saved("a"))
+        store.saveEngineItem(ItemKind.Skin, "eng", ItemSelection.Saved("b"))
+        store.saveLevelItem(ItemKind.Skin, "srv", "orig", ItemSelection.Original)
+        store.saveLevelItem(ItemKind.Background, "srv", "lvl", ItemSelection.Saved("c"))
+        assertEquals(
+            setOf<Pair<SkinScope, ItemSelection>>(
+                SkinScope.Level("srv", "lvl") to ItemSelection.Saved("a"),
+                SkinScope.Engine("eng") to ItemSelection.Saved("b"),
+                SkinScope.Level("srv", "orig") to ItemSelection.Original,
+            ),
+            store.skinChoices().toSet(),
+        )
+    }
+
+    @Test
+    fun migratedFlagPersists() = runBlocking {
+        val store = SettingsStore(MemoryStore())
+        assertEquals(false, store.itemsMigrated.first())
+        store.markItemsMigrated()
+        assertEquals(true, store.itemsMigrated.first())
     }
 }

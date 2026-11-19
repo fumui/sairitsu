@@ -22,58 +22,68 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import my.fumui.sairitsu.gameplay.SavedSkin
-import my.fumui.sairitsu.gameplay.ScopedSkins
+import my.fumui.sairitsu.gameplay.ItemKind
+import my.fumui.sairitsu.gameplay.SavedItem
+import my.fumui.sairitsu.gameplay.ScopedItems
 import my.fumui.sairitsu.library.downloadErrorText
 import my.fumui.sairitsu.text.Localizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-/** Settings section: the skins saved on this device. */
+/** Settings section: the skins, backgrounds, SFX and particles saved on this device, grouped by kind. */
 @Composable
-fun SkinsSection(skins: ScopedSkins) {
-    val saved by skins.library.skins.collectAsState()
+fun SavedItemsSection(items: ScopedItems) {
+    val all by items.library.items.collectAsState()
     val localizer = remember { Localizer(Localizer.serverLanguage(Locale.getDefault())) }
-    var removing by remember { mutableStateOf<SavedSkin?>(null) }
+    var removing by remember { mutableStateOf<SavedItem?>(null) }
     var removeError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Skins", style = MaterialTheme.typography.titleMedium)
-        for (skin in saved) {
-            val title = localizer.text(skin.title)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                IconButton(onClick = { removing = skin }) {
-                    Icon(
-                        Icons.Outlined.Delete,
-                        contentDescription = "Remove $title",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        Text("Saved items", style = MaterialTheme.typography.titleMedium)
+        for (kind in ItemKind.entries) {
+            val group = all.filter { it.kind == kind }
+            if (group.isEmpty()) continue
+            Text(
+                kind.plural.replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            for (item in group) {
+                val title = localizer.text(item.title)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    IconButton(onClick = { removing = item }) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "Remove $title",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
         removeError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         Text(
-            "Get more skins from a server's Skins page in Online Servers.",
+            "Get more from a server's pages in Online Servers.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 
-    removing?.let { skin ->
+    removing?.let { item ->
         AlertDialog(
             onDismissRequest = { removing = null },
-            title = { Text("Remove \"${localizer.text(skin.title)}\"?") },
-            text = { Text("Levels and engines using this skin go back to their own look.") },
+            title = { Text("Remove \"${localizer.text(item.title)}\"?") },
+            text = { Text("Levels and engines using it go back to their own ${item.kind.label}.") },
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
                     removeError = null
                     scope.launch {
                         try {
-                            skins.remove(skin.id)
+                            items.remove(item.id)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {

@@ -43,8 +43,8 @@ fun OptionsScreen(
     onOption: (name: String, value: Float) -> Unit,
     onSettings: (AppSettings) -> Unit,
     onInputOffset: (OffsetScope, Float) -> Unit,
-    onLevelSkin: (SkinSelection) -> Unit,
-    onEngineSkin: (SkinSelection) -> Unit,
+    onLevelItem: (ItemKind, ItemSelection) -> Unit,
+    onEngineItem: (ItemKind, ItemSelection) -> Unit,
     onBack: () -> Unit,
 ) {
     val localizer = remember { Localizer(Localizer.serverLanguage(Locale.getDefault())) }
@@ -56,8 +56,8 @@ fun OptionsScreen(
                 OptionRow(option, state.values[option.name] ?: option.def, localizer) { onOption(option.name, it) }
             }
         }
-    } + SectionSpec("Skin", 3) {
-        SkinPickers(state.skins, localizer, onLevelSkin, onEngineSkin)
+    } + SectionSpec("Look & sound", 4 * 3) {
+        ItemPickers(state.items, localizer, onLevelItem, onEngineItem)
     } + SectionSpec("Audio & input", 6 * SLIDER_WEIGHT + 1) {
         AppSettingsSliders(state.settings, inputOffsetLabel = "Input offset (all levels)", onSettings = onSettings)
         InputOffsetSlider("Input offset (this server)", state.offsets.server) { onInputOffset(OffsetScope.Server, it) }

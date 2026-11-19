@@ -22,6 +22,20 @@ class HubSectionsTest {
     }
 
     @Test
+    fun allSevenInOrder() {
+        val types = listOf("configuration", "particle", "effect", "background", "skin", "post", "level").toTypedArray()
+        val buttons = hubButtons(info(*types, configuration = config), l)
+        assertEquals(
+            listOf(
+                HubSection.Levels, HubSection.Posts, HubSection.Skins, HubSection.Backgrounds,
+                HubSection.Sfx, HubSection.Particles, HubSection.Configuration,
+            ),
+            buttons.map { it.section },
+        )
+        assertEquals("SFX", buttons.first { it.section == HubSection.Sfx }.label)
+    }
+
+    @Test
     fun unsupportedTypesAreIgnored() {
         assertEquals(listOf(HubSection.Levels), hubButtons(info("room", "user", "level", "playlist"), l).map { it.section })
     }

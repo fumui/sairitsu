@@ -18,9 +18,10 @@ import my.fumui.sairitsu.gameplay.RunHistory
 import my.fumui.sairitsu.gameplay.LevelLoader
 import my.fumui.sairitsu.gameplay.ResourceCache
 import my.fumui.sairitsu.gameplay.ResultStore
-import my.fumui.sairitsu.gameplay.ScopedSkins
+import my.fumui.sairitsu.gameplay.ScopedItems
 import my.fumui.sairitsu.gameplay.SettingsStore
-import my.fumui.sairitsu.gameplay.SkinLibrary
+import my.fumui.sairitsu.gameplay.ItemLibrary
+import my.fumui.sairitsu.gameplay.ItemMigration
 import my.fumui.sairitsu.library.CollectionStore
 import my.fumui.sairitsu.library.Library
 import my.fumui.sairitsu.library.LibraryDownloader
@@ -94,8 +95,22 @@ class AppServices private constructor(context: Context) {
     }
     val servers = ServerListStore(context)
     val settings = SettingsStore(context)
-    val skinLibrary = SkinLibrary(File(context.filesDir, "skins"), client)
-    val skins = ScopedSkins(skinLibrary, settings)
+    val itemLibrary = ItemLibrary(File(context.filesDir, "skins"), client)
+    val items = ScopedItems(itemLibrary, settings)
+
+    init {
+        // Saved skin choices also apply to the background and particles migrated from the skin; retried next start on failure.
+        scope.launch {
+            try {
+                val legacyPending = File(context.filesDir, "skins/skins.json").exists()
+                ItemMigration.migrateChoices(settings, itemLibrary.items.value, legacyPending)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The flag stays unset, so the next start retries.
+            }
+        }
+    }
     val results: ResultStore = DataStoreResultStore(context)
     val runs: RunHistory = FileRunHistory(File(context.filesDir, "runs"))
     val replays = ReplayStore(File(context.filesDir, "replays"))

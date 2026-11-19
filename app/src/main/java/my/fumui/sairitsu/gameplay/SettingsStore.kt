@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
@@ -126,51 +127,79 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[SHOW_FPS] = on }
     }
 
-    /** The skin chosen for [level] on [server] (a [my.fumui.sairitsu.data.ServerAddress.linkAddress]). */
-    fun levelSkin(server: String, level: String): Flow<SkinSelection> =
-        store.data.map { decodeSkin(it[levelSkinKey(server, level)], SkinSelection.UseEngine) }
+    /** The [kind] item chosen for [level] on [server] (a [my.fumui.sairitsu.data.ServerAddress.linkAddress]). */
+    fun levelItem(kind: ItemKind, server: String, level: String): Flow<ItemSelection> =
+        store.data.map { decodeItem(it[levelItemKey(kind, server, level)], ItemSelection.UseEngine) }
 
-    /** The skin chosen for every level of [engine]. */
-    fun engineSkin(engine: String): Flow<SkinSelection> =
-        store.data.map { decodeSkin(it[engineSkinKey(engine)], SkinSelection.Original) }
+    /** The [kind] item chosen for every level of [engine]. */
+    fun engineItem(kind: ItemKind, engine: String): Flow<ItemSelection> =
+        store.data.map { decodeItem(it[engineItemKey(kind, engine)], ItemSelection.Original) }
 
     /** Saves the level's choice. Following the engine is the default, so it leaves nothing behind. */
-    suspend fun saveLevelSkin(server: String, level: String, selection: SkinSelection) {
+    suspend fun saveLevelItem(kind: ItemKind, server: String, level: String, selection: ItemSelection) {
         store.edit { prefs ->
-            val key = levelSkinKey(server, level)
-            if (selection == SkinSelection.UseEngine) prefs.remove(key) else prefs[key] = encodeSkin(selection)
+            val key = levelItemKey(kind, server, level)
+            if (selection == ItemSelection.UseEngine) prefs.remove(key) else prefs[key] = encodeItem(selection)
         }
     }
 
-    /** Saves the engine's choice. The original skin is the default, so it leaves nothing behind. */
-    suspend fun saveEngineSkin(engine: String, selection: SkinSelection) {
+    /** Saves the engine's choice. The original is the default, so it leaves nothing behind. */
+    suspend fun saveEngineItem(kind: ItemKind, engine: String, selection: ItemSelection) {
         store.edit { prefs ->
-            val key = engineSkinKey(engine)
-            if (selection is SkinSelection.Saved) prefs[key] = encodeSkin(selection) else prefs.remove(key)
+            val key = engineItemKey(kind, engine)
+            if (selection is ItemSelection.Saved) prefs[key] = encodeItem(selection) else prefs.remove(key)
         }
     }
 
-    /** Clears every level and engine choice that names the saved skin [id]. */
-    suspend fun clearSkin(id: String) {
-        val value = encodeSkin(SkinSelection.Saved(id))
+    /** Clears every level and engine choice, of every kind, that names the saved item [id]. */
+    suspend fun clearItem(id: String) {
+        val value = encodeItem(ItemSelection.Saved(id))
         store.edit { prefs ->
-            prefs.asMap().filter { (key, saved) -> key.name.startsWith(SKIN_PREFIX) && saved == value }.keys
-                .forEach { prefs.remove(stringPreferencesKey(it.name)) }
+            prefs.asMap().filter { (key, saved) -> saved == value && ItemKind.entries.any { key.name.startsWith(itemPrefix(it)) } }
+                .keys.forEach { prefs.remove(stringPreferencesKey(it.name)) }
         }
     }
 
-    private fun levelSkinKey(server: String, level: String) = stringPreferencesKey("${SKIN_PREFIX}level|$server|$level")
-
-    private fun engineSkinKey(engine: String) = stringPreferencesKey("${SKIN_PREFIX}engine|$engine")
-
-    private fun encodeSkin(selection: SkinSelection): String = when (selection) {
-        is SkinSelection.Saved -> SAVED_SKIN + selection.id
-        else -> ORIGINAL_SKIN
+    /** Every stored level and engine skin choice (saved or original), for the one-time move to [ItemLibrary]. */
+    suspend fun skinChoices(): List<Pair<SkinScope, ItemSelection>> {
+        val prefix = itemPrefix(ItemKind.Skin)
+        return store.data.first().asMap().mapNotNull { (key, value) ->
+            val id = (value as? String)?.let { decodeItem(it, ItemSelection.UseEngine) }?.takeIf { it != ItemSelection.UseEngine }
+                ?: return@mapNotNull null
+            val rest = key.name.takeIf { it.startsWith(prefix) }?.removePrefix(prefix) ?: return@mapNotNull null
+            when {
+                rest.startsWith("level|") -> {
+                    val (server, level) = rest.removePrefix("level|").split('|', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+                    SkinScope.Level(server, level) to id
+                }
+                rest.startsWith("engine|") -> SkinScope.Engine(rest.removePrefix("engine|")) to id
+                else -> null
+            }
+        }
     }
 
-    private fun decodeSkin(value: String?, default: SkinSelection): SkinSelection = when {
-        value == ORIGINAL_SKIN -> SkinSelection.Original
-        value != null && value.startsWith(SAVED_SKIN) -> SkinSelection.Saved(value.removePrefix(SAVED_SKIN))
+    /** Whether the saved skins were already moved to [ItemLibrary]. */
+    val itemsMigrated: Flow<Boolean> = store.data.map { it[ITEMS_MIGRATED] ?: false }
+
+    suspend fun markItemsMigrated() {
+        store.edit { it[ITEMS_MIGRATED] = true }
+    }
+
+    private fun itemPrefix(kind: ItemKind) = "${kind.wireType}|"
+
+    private fun levelItemKey(kind: ItemKind, server: String, level: String) =
+        stringPreferencesKey("${itemPrefix(kind)}level|$server|$level")
+
+    private fun engineItemKey(kind: ItemKind, engine: String) = stringPreferencesKey("${itemPrefix(kind)}engine|$engine")
+
+    private fun encodeItem(selection: ItemSelection): String = when (selection) {
+        is ItemSelection.Saved -> SAVED_ITEM + selection.id
+        else -> ORIGINAL_ITEM
+    }
+
+    private fun decodeItem(value: String?, default: ItemSelection): ItemSelection = when {
+        value == ORIGINAL_ITEM -> ItemSelection.Original
+        value != null && value.startsWith(SAVED_ITEM) -> ItemSelection.Saved(value.removePrefix(SAVED_ITEM))
         else -> default
     }
 
@@ -181,9 +210,9 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     private fun levelOffsetKey(server: String, level: String) = floatPreferencesKey("input_offset|level|$server|$level")
 
     private companion object {
-        const val SKIN_PREFIX = "skin|"
-        const val ORIGINAL_SKIN = "original"
-        const val SAVED_SKIN = "saved:"
+        const val ORIGINAL_ITEM = "original"
+        const val SAVED_ITEM = "saved:"
+        val ITEMS_MIGRATED = booleanPreferencesKey("items_migrated")
         val SAVE_LEVELS_I_PLAY = booleanPreferencesKey("save_levels_i_play")
         val SHOW_FPS = booleanPreferencesKey("show_fps")
         val EFFECT_VOLUME = floatPreferencesKey("effect_volume")
