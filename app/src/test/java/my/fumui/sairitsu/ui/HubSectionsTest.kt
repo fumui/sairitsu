@@ -37,7 +37,7 @@ class HubSectionsTest {
 
     @Test
     fun unsupportedTypesAreIgnored() {
-        assertEquals(listOf(HubSection.Levels), hubButtons(info("room", "user", "level", "playlist"), l).map { it.section })
+        assertEquals(listOf(HubSection.Levels), hubButtons(info("room", "user", "level", "replay"), l).map { it.section })
     }
 
     @Test
@@ -50,6 +50,16 @@ class HubSectionsTest {
     fun configurationHiddenWithoutOptions() {
         assertEquals(emptyList<HubButton>(), hubButtons(info("configuration"), l))
         assertEquals(emptyList<HubButton>(), hubButtons(info("configuration", configuration = ServerConfiguration(emptyList())), l))
+    }
+
+    @Test
+    fun playlistsBetweenParticlesAndConfiguration() {
+        val buttons = hubButtons(info("configuration", "playlist", "particle", "level", configuration = config), l)
+        assertEquals(
+            listOf(HubSection.Levels, HubSection.Particles, HubSection.Playlists, HubSection.Configuration),
+            buttons.map { it.section },
+        )
+        assertEquals("Playlists", buttons.first { it.section == HubSection.Playlists }.label)
     }
 
     @Test

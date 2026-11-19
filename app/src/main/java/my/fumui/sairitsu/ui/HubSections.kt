@@ -12,6 +12,7 @@ enum class HubSection(val wireType: String, val defaultLabel: String) {
     Backgrounds("background", "Backgrounds"),
     Sfx("effect", "SFX"),
     Particles("particle", "Particles"),
+    Playlists("playlist", "Playlists"),
     Configuration("configuration", "Configuration"),
 }
 

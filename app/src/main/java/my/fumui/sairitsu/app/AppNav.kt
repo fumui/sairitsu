@@ -35,6 +35,7 @@ import my.fumui.sairitsu.gameplay.GameplayActivity
 import my.fumui.sairitsu.gameplay.GameplayIntent
 import my.fumui.sairitsu.gameplay.GameplayMode
 import my.fumui.sairitsu.gameplay.ItemKind
+import my.fumui.sairitsu.library.DownloadState
 import my.fumui.sairitsu.library.LevelStats
 import my.fumui.sairitsu.library.Membership
 import my.fumui.sairitsu.library.collectionNameError
@@ -56,6 +57,11 @@ import my.fumui.sairitsu.ui.MenuScreen
 import my.fumui.sairitsu.ui.PickerScope
 import my.fumui.sairitsu.ui.PickerScreen
 import my.fumui.sairitsu.ui.PickerViewModel
+import my.fumui.sairitsu.ui.PlaylistDownloads
+import my.fumui.sairitsu.ui.PlaylistScreen
+import my.fumui.sairitsu.ui.PlaylistViewModel
+import my.fumui.sairitsu.ui.PlaylistsScreen
+import my.fumui.sairitsu.ui.PlaylistsViewModel
 import my.fumui.sairitsu.ui.PostsScreen
 import my.fumui.sairitsu.ui.PostsViewModel
 import my.fumui.sairitsu.ui.previewLevels
@@ -72,6 +78,7 @@ import my.fumui.sairitsu.ui.SettingsScreen
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -96,6 +103,12 @@ data class ServerItemsRoute(val address: String, val kind: String)
 
 @Serializable
 data class ServerPostsRoute(val address: String)
+
+@Serializable
+data class ServerPlaylistsRoute(val address: String)
+
+@Serializable
+data class ServerPlaylistRoute(val address: String, val name: String)
 
 /** savedStateHandle key (on the hub's entry) for a message the hub shows in a snackbar. */
 const val HUB_MESSAGE = "hubMessage"
@@ -183,6 +196,7 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
                         when {
                             section == HubSection.Levels -> BrowseRoute(server.baseUrl.toString())
                             section == HubSection.Posts -> ServerPostsRoute(address)
+                            section == HubSection.Playlists -> ServerPlaylistsRoute(address)
                             kind != null -> ServerItemsRoute(address, kind.wireType)
                             else -> ServerConfigRoute(address)
                         },
@@ -203,6 +217,34 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
                 factory = viewModelFactory { initializer { PostsViewModel(ItemApi(server, services.client)) } },
             )
             PostsScreen(vm, server, localizer, onBack = { nav.popBackStack() })
+        }
+        composable<ServerPlaylistsRoute> { entry ->
+            val address = entry.toRoute<ServerPlaylistsRoute>().address
+            val server = remember(address) { ServerAddress.parse(address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val vm: PlaylistsViewModel = viewModel(
+                factory = viewModelFactory { initializer { PlaylistsViewModel(ItemApi(server, services.client)) } },
+            )
+            PlaylistsScreen(
+                vm, server, localizer, playlistDownloads(services, server),
+                onOpen = { name -> nav.navigate(ServerPlaylistRoute(address, name)) },
+                onBack = { nav.popBackStack() },
+            )
+        }
+        composable<ServerPlaylistRoute> { entry ->
+            val route = entry.toRoute<ServerPlaylistRoute>()
+            val server = remember(route.address) { ServerAddress.parse(route.address) }
+            if (server == null) {
+                Placeholder(PickerViewModel.INVALID_ADDRESS)
+                return@composable
+            }
+            val vm: PlaylistViewModel = viewModel(
+                factory = viewModelFactory { initializer { PlaylistViewModel(ItemApi(server, services.client), route.name) } },
+            )
+            PlaylistScreen(vm, server, localizer, playlistDownloads(services, server), onBack = { nav.popBackStack() })
         }
         composable<ServerItemsRoute> { entry ->
             val route = entry.toRoute<ServerItemsRoute>()
@@ -424,6 +466,26 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
         composable<SettingsRoute> {
             SettingsScreen(services.settings, services.library, services.items, onBack = { nav.popBackStack() })
         }
+    }
+}
+
+/** [server]'s downloaded and downloading levels, its download failures, and the playlist save action. */
+@Composable
+private fun playlistDownloads(services: AppServices, server: ServerAddress): PlaylistDownloads {
+    val link = server.linkAddress
+    val entries by services.library.index.entries.collectAsState()
+    val states by services.downloader.states.collectAsState()
+    val servers by services.servers.servers.collectAsState(emptyList())
+    val downloaded = remember(entries) { entries.mapTo(HashSet()) { it.key } }
+    val mine = remember(states) { states.filterKeys { it.server == link } }
+    val active = remember(mine) { mine.filterValues { it !is DownloadState.Failed }.keys }
+    val failures = remember(mine) {
+        mine.values.filterIsInstance<DownloadState.Failed>().map { f -> f.resource?.let { "$it: ${f.message}" } ?: f.message }
+    }
+    val serverTitle = servers.firstOrNull { it.address == link }?.title ?: link
+    return PlaylistDownloads(downloaded, active, failures) { name, levels ->
+        // On the app's scope, so leaving the screen doesn't stop it; the screen only waits for the outcome.
+        services.scope.async { services.playlistSaver.save(server, serverTitle, name, levels) }.await()
     }
 }
 

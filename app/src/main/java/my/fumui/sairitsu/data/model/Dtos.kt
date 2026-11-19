@@ -114,6 +114,17 @@ data class ServerInfo(
     val configuration: ServerConfiguration? = null,
 )
 
+/** A playlist from a server's list or details; [levels] may be empty in a list item. */
+@Serializable
+data class PlaylistSummary(
+    val name: String,
+    val title: String = "",
+    val subtitle: String = "",
+    val author: String = "",
+    val thumbnail: Srl? = null,
+    val levels: List<LevelItem> = emptyList(),
+)
+
 @Serializable
 data class ItemInfo(
     val sections: List<ItemSection> = emptyList(),

@@ -83,4 +83,20 @@ class ParsingTest {
         assertTrue(info.buttons.isEmpty())
         assertNull(info.configuration)
     }
+
+    @Test
+    fun playlistWithLevelsParses() {
+        val playlist = ServerJson.decodeFromString<PlaylistSummary>(
+            """{"name":"p","title":"Pack","subtitle":"2 levels","author":"A","tags":[],
+                "levels":[{"name":"a","title":"A","rating":5},{"name":"b","title":"B"}]}""",
+        )
+        assertEquals("Pack", playlist.title)
+        assertEquals(listOf("a", "b"), playlist.levels.map { it.name })
+    }
+
+    @Test
+    fun playlistWithoutLevelsParses() {
+        val playlist = ServerJson.decodeFromString<PlaylistSummary>("""{"name":"p","title":"Pack"}""")
+        assertTrue(playlist.levels.isEmpty())
+    }
 }

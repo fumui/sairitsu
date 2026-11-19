@@ -27,6 +27,7 @@ import my.fumui.sairitsu.library.Library
 import my.fumui.sairitsu.library.LibraryDownloader
 import my.fumui.sairitsu.library.LibraryIndex
 import my.fumui.sairitsu.library.LibraryQueryStore
+import my.fumui.sairitsu.library.PlaylistSaver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -74,6 +75,13 @@ class AppServices private constructor(context: Context) {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val downloader = LibraryDownloader(loader, library, scope)
+
+    /** "Download all as collection" for a server's playlists. */
+    val playlistSaver = PlaylistSaver(
+        collections,
+        download = { server, serverTitle, level -> downloader.download(server, serverTitle, level) },
+        libraryKeys = { library.index.entries.value.mapTo(HashSet()) { it.key } },
+    )
 
     init {
         // Pending memberships (ticked in the browser before the download) join once the level is in the library. The
