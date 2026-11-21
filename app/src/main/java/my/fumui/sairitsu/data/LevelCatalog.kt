@@ -220,13 +220,16 @@ class LevelCatalog internal constructor(
             state.value = CatalogState(items, loaded = true, complete = meta.complete, syncedAt = meta.syncedAt)
         }
         val source = sourceFor(server)
-        // A server that opts out never has a list saved; offline (info unreachable) a saved copy stays usable.
+        // A server that opts out never has a list saved. If its info can't be read we can't tell whether it opts
+        // out, so fail without any list request (a crawl of a huge catalog); the saved copy stays usable.
         val optedOut = try {
             !source.serverInfo().savesLevelList
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            false
+        } catch (e: Exception) {
+            state.update { it.copy(status = SyncStatus.Failed(syncError(e))) }
+            publishSummary(key)
+            return
         }
         if (optedOut) {
             files.delete(key)

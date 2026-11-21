@@ -216,5 +216,18 @@ class LevelCatalogTest {
         advanceUntilIdle()
         assertEquals(listOf("a", "b", "c", "d"), names(again))
         assertTrue(!again.state(server).value.disabled)
+        assertTrue(again.state(server).value.status is SyncStatus.Failed)
+    }
+
+    @Test
+    fun serverInfoFailureFetchesNoPages() = runTest {
+        val source = PagedServer(levels("a", "b", "c", "d"))
+        source.info = { throw IOException("offline") }
+        val fresh = catalog(source)
+        fresh.open(server)
+        advanceUntilIdle()
+        assertEquals(emptyList<Int>(), source.pagesFetched)
+        assertEquals(emptyList<String>(), names(fresh))
+        assertTrue(fresh.state(server).value.status is SyncStatus.Failed)
     }
 }

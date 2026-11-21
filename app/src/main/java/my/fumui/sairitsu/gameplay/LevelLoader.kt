@@ -25,6 +25,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 data class LoadProgress(
     val done: Int,
@@ -71,6 +72,9 @@ class LevelLoader(
     private val pinnedKeys: () -> Set<String> = { emptySet() },
     private val localLevel: (LevelKey) -> LocalLevel? = { null },
 ) : DownloadSource {
+    // Resource downloads only: a server may convert a level on first request, which outlasts the default timeout.
+    private val downloadClient by lazy { client.newBuilder().readTimeout(90, TimeUnit.SECONDS).build() }
+
     override suspend fun load(
         server: ServerAddress,
         level: String,
@@ -277,7 +281,7 @@ class LevelLoader(
     private suspend fun download(url: String, hash: String?, key: String, onBytes: (Long, Long?) -> Unit): File {
         val ctx = currentCoroutineContext()
         val request = Request.Builder().url(url).build()
-        return withCall(client.newCall(request)) { response ->
+        return withCall(downloadClient.newCall(request)) { response ->
             if (!response.isSuccessful) throw ServerApiException(response.code, "HTTP ${response.code} for $url")
             val body = response.body!!
             val totalBytes = body.contentLength().takeIf { it >= 0 }
