@@ -184,4 +184,18 @@ class LibraryDownloaderTest {
         downloader.saveLoaded(server, "S", loaded)
         assertNotNull(library.index.get(key("a"))?.coverKey)
     }
+
+    @Test
+    fun downloadAllQueuesEveryLevelOnceAndSkipsActiveOnes() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        downloader.download(server, "S", level("a"))
+        val queued = downloader.downloadAll(server, "S", listOf(level("a"), level("b"), level("c")))
+        assertEquals(2, queued)
+        assertEquals(setOf(key("a"), key("b"), key("c")), downloader.states.value.keys)
+        gate.complete(Unit)
+        withTimeout(5_000) { while (downloader.states.value.isNotEmpty()) delay(5) }
+        assertEquals(setOf("a", "b", "c"), library.index.entries.value.mapTo(HashSet()) { it.name })
+    }
 }

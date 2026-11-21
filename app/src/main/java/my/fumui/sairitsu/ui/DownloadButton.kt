@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.gameplay.LoadProgress
+import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.library.DownloadState
 
 /** What the browser's Download button shows for a level. */
@@ -37,6 +38,15 @@ fun downloadButtonState(downloaded: Boolean, state: DownloadState?): DownloadBut
     state is DownloadState.Failed -> DownloadButtonState.Failed(state.message)
     else -> DownloadButtonState.NotDownloaded
 }
+
+/** The [levels] a bulk download should queue: not downloaded and not queued or running (failed ones retry), once each. */
+fun levelsToQueue(levels: List<LevelItem>, downloaded: Set<String>, states: Map<String, DownloadState>): List<LevelItem> =
+    levels.distinctBy { it.name }.filter { level ->
+        when (downloadButtonState(level.name in downloaded, states[level.name])) {
+            DownloadButtonState.NotDownloaded, is DownloadButtonState.Failed -> true
+            else -> false
+        }
+    }
 
 /** "Download", progress (tap to cancel), a disabled check icon once downloaded, or "Retry". */
 @Composable

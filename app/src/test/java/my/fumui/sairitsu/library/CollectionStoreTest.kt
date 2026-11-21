@@ -76,6 +76,16 @@ class CollectionStoreTest {
     }
 
     @Test
+    fun removeLevelsDropsSeveralFromEveryCollection() = runBlocking {
+        val s = store()
+        val x = s.create("x", setOf(key("a"), key("b"), key("c")))
+        val y = s.create("y", setOf(key("a")))
+        s.removeLevels(setOf(key("a"), key("b")))
+        assertEquals(listOf(key("c")), s.get(x.id)!!.levels)
+        assertEquals(emptyList<LevelKey>(), s.get(y.id)!!.levels)
+    }
+
+    @Test
     fun pruneOnLoadDropsMembersMissingFromLibrary() = runBlocking {
         val x = store().create("x", setOf(key("a"), key("gone")))
         assertEquals(listOf(key("a")), store(setOf(key("a"))).get(x.id)!!.levels)

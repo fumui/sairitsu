@@ -186,6 +186,53 @@ class LibraryViewModelCollectionsTest {
         assertEquals(listOf(key("b")), collections.get(x.id)!!.levels)
     }
 
+    @Test
+    fun deleteSelectionDeletesAllAndEndsSelection() = test {
+        val x = collections.create("x", setOf(key("a"), key("b")))
+        val vm = vm()
+        vm.startSelection(listOf(key("a"), key("b")))
+        vm.deleteSelection()!!.let { job -> settle { job.isCompleted } }
+        assertEquals(emptySet<LevelKey>(), vm.ui.selection)
+        settle { vm.names() == listOf("c") && collections.get(x.id)!!.levels.isEmpty() }
+        assertEquals(listOf("c"), vm.names())
+        assertEquals(emptyList<LevelKey>(), collections.get(x.id)!!.levels)
+    }
+
+    @Test
+    fun deleteSelectionMovesDetailsToANeighbour() = test {
+        val vm = vm()
+        val shown = vm.ui.visible
+        vm.select(shown[0])
+        vm.startSelection(listOf(shown[0].key))
+        vm.deleteSelection()!!.let { job -> settle { job.isCompleted } }
+        settle { vm.ui.visible.size == shown.size - 1 }
+        assertEquals(shown[1].key, vm.ui.selected?.key)
+    }
+
+    @Test
+    fun deleteSelectionAtTheEndMovesDetailsBack() = test {
+        val vm = vm()
+        val shown = vm.ui.visible
+        vm.select(shown[1])
+        vm.startSelection(listOf(shown[1].key, shown[2].key))
+        vm.deleteSelection()!!.let { job -> settle { job.isCompleted } }
+        settle { vm.ui.visible.size == 1 }
+        assertEquals(shown[0].key, vm.ui.selected?.key)
+    }
+
+    @Test
+    fun deleteSelectionReportsFailuresOnce() = test {
+        val vm = vm()
+        // A directory where the index writes its temp file: every index write fails.
+        File(tmp.root, "library.json.tmp").mkdir()
+        vm.startSelection(listOf(key("a"), key("b")))
+        vm.deleteSelection()!!.let { job -> settle { job.isCompleted } }
+        settle { vm.ui.message != null }
+        assertEquals(LibraryViewModel.deleteFailed(2), vm.ui.message)
+        assertEquals(3, vm.ui.visible.size)
+        assertEquals("Couldn't delete the level", LibraryViewModel.deleteFailed(1))
+    }
+
     // Multi-select and membership actions
 
     @Test

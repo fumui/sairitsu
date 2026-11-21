@@ -71,6 +71,15 @@ class LibraryIndex(private val file: File) {
         old.allKeys() - next.flatMapTo(HashSet()) { it.allKeys() }
     }
 
+    /** Removes the levels [keys] in one write; returns their keys that no remaining entry references. */
+    suspend fun removeAll(keys: Set<LevelKey>): Set<String> = mutex.withLock {
+        val current = _entries.value
+        val (old, next) = current.partition { it.key in keys }
+        if (old.isEmpty()) return@withLock emptySet()
+        write(next)
+        old.flatMapTo(HashSet()) { it.allKeys() } - next.flatMapTo(HashSet()) { it.allKeys() }
+    }
+
     private suspend fun write(next: List<LibraryEntry>) {
         withContext(Dispatchers.IO) {
             file.parentFile?.mkdirs()

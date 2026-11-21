@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -137,7 +138,7 @@ fun CollectionNameDialog(
     )
 }
 
-/** The picker's top row in selection mode. [removeLabel] null hides the ⋮ menu. */
+/** The picker's top row in selection mode. [removeLabel] null hides the ⋮ menu; [onDelete] null hides Delete. */
 @Composable
 fun SelectionBar(
     count: Int,
@@ -148,12 +149,16 @@ fun SelectionBar(
     onAddToCollection: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    onDelete: (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = "Close selection") }
         Text("$count selected", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         TextButton(onClick = onSelectAll) { Text(if (allSelected) "Select none" else "Select all") }
         IconButton(onClick = onAddToCollection) { Icon(Icons.Outlined.BookmarkAdd, contentDescription = "Add to collection") }
+        if (onDelete != null) {
+            IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
+        }
         if (removeLabel != null) {
             var open by remember { mutableStateOf(false) }
             Box {

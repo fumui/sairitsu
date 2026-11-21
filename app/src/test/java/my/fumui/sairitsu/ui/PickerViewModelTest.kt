@@ -492,5 +492,32 @@ class PickerViewModelTest {
         assertEquals(mapOf("type" to "quick", "keywords" to "love"), source.listCalls.last().first)
     }
 
+    @Test
+    fun selectionToggleAndSelectAll() = test {
+        val vm = connected()
+        val names = vm.ui.list.items.map { it.name }
+        vm.startSelection(listOf(names[0]))
+        vm.toggleSelection(names.take(2))
+        assertEquals(names.take(2).toSet(), vm.ui.selection)
+        vm.toggleSelection(names.take(2))
+        assertEquals(emptySet<String>(), vm.ui.selection)
+        vm.selectAll()
+        assertEquals(names.toSet(), vm.ui.selection)
+        vm.selectAll()
+        assertEquals(emptySet<String>(), vm.ui.selection)
+        vm.startSelection(listOf(names[0]))
+        vm.clearSelection()
+        assertEquals(emptySet<String>(), vm.ui.selection)
+    }
+
+    @Test
+    fun selectionClearsWhenTheListReloads() = test {
+        val vm = connected()
+        vm.startSelection(listOf(vm.ui.list.items[0].name))
+        vm.openSearch()
+        advanceUntilIdle()
+        assertEquals(emptySet<String>(), vm.ui.selection)
+    }
+
     private fun adv(vm: PickerViewModel) = vm.ui.search!!.let { it.forms[it.activeForm] }
 }

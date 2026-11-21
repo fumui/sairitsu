@@ -61,6 +61,26 @@ class LibraryDownloader(
         val key = LevelKey(server.linkAddress, level.name)
         if (jobs[key]?.isActive == true) return null
         set(key, DownloadState.Queued)
+        return start(server, serverTitle, level, key)
+    }
+
+    /**
+     * Queues every level in [levels] that isn't queued or running already, marking them all Queued in one state update
+     * (so a long list doesn't copy the state map once per level). Returns how many were queued.
+     */
+    @Synchronized
+    fun downloadAll(server: ServerAddress, serverTitle: String, levels: List<LevelItem>): Int {
+        val todo = levels.distinctBy { it.name }
+            .map { LevelKey(server.linkAddress, it.name) to it }
+            .filter { (key, _) -> jobs[key]?.isActive != true }
+        if (todo.isEmpty()) return 0
+        _states.update { states -> states + todo.map { (key, _) -> key to DownloadState.Queued } }
+        for ((key, level) in todo) start(server, serverTitle, level, key)
+        return todo.size
+    }
+
+    /** Launches the download of [level]; its state is already Queued. Caller holds the lock. */
+    private fun start(server: ServerAddress, serverTitle: String, level: LevelItem, key: LevelKey): Job {
         val job = scope.launch {
             try {
                 mutex.withLock {

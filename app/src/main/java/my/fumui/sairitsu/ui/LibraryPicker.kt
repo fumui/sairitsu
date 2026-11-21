@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +85,7 @@ fun LibraryPicker(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var confirmDelete by remember { mutableStateOf<LibraryEntry?>(null) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
     // The levels the "Add to collection" dialog (or its "New collection" dialog) is for; null = closed.
     var addKeys by remember { mutableStateOf<Set<LevelKey>?>(null) }
     var newFor by remember { mutableStateOf<Set<LevelKey>?>(null) }
@@ -123,6 +125,7 @@ fun LibraryPicker(
                     onSelectAll = vm::selectAll,
                     onAddToCollection = { addKeys = state.selection },
                     onRemove = vm::removeSelectionFromTarget,
+                    onDelete = { confirmBulkDelete = true },
                 )
             } else {
                 Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -259,12 +262,36 @@ fun LibraryPicker(
             title = { Text("Delete this level?") },
             text = { Text(localizer.text(entry.title)) },
             confirmButton = {
-                TextButton(onClick = {
-                    vm.delete(entry)
-                    confirmDelete = null
-                }) { Text("Delete") }
+                TextButton(
+                    onClick = {
+                        vm.delete(entry)
+                        confirmDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
+    }
+    if (confirmBulkDelete) {
+        val count = state.selection.size
+        val single = state.selection.singleOrNull()?.let { key -> state.visible.firstOrNull { it.key == key } }
+        // The selection can empty under the dialog (e.g. the levels were deleted elsewhere).
+        LaunchedEffect(count) { if (count == 0) confirmBulkDelete = false }
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = { Text(if (count == 1) "Delete this level?" else "Delete $count levels?") },
+            text = { Text(single?.let { localizer.text(it.title) } ?: "They'll be removed from this device.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.deleteSelection()
+                        confirmBulkDelete = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } },
         )
     }
 }

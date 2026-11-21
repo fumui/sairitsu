@@ -87,6 +87,18 @@ class LibraryTest {
     }
 
     @Test
+    fun deleteAllRemovesEveryLevelAndUnsharedFiles() = runBlocking {
+        val (library, cache, source) = setup()
+        for (name in listOf("a", "b", "c")) library.add(library.entryFrom(server, "S", source.load(server, name) {}, null, null))
+        library.deleteAll(setOf(LevelKey("sonolus.sbuga.com", "a"), LevelKey("sonolus.sbuga.com", "b")))
+        assertEquals(listOf("c"), library.index.entries.value.map { it.name })
+        assertFalse(cache.has("a-13"))
+        assertFalse(cache.has("b-13"))
+        assertTrue(cache.has("engine-0"))
+        assertTrue(cache.has("c-13"))
+    }
+
+    @Test
     fun replacingAnEntryReleasesDroppedFiles() = runBlocking {
         val (library, cache, source) = setup()
         val loaded = source.load(server, "a") {}

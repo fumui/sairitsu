@@ -22,6 +22,7 @@ import my.fumui.sairitsu.library.applyQuery
 import my.fumui.sairitsu.library.facets
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -157,6 +158,33 @@ class LibraryViewModel(
             }
             // If this fails, the next load's prune drops the level from its collections.
             saveCollections { removeLevel(entry.key) }
+        }
+    }
+
+    /** Deletes every selected level and ends selection mode; a failure becomes a message. Null when nothing is selected. */
+    fun deleteSelection(): Job? {
+        val keys = _state.value.selection
+        if (keys.isEmpty()) return null
+        clearSelection()
+        // Move the details pane off a level being deleted first: to the next kept one, else the previous kept one.
+        val s = _state.value
+        val at = s.visible.indexOfFirst { it.key == s.selected?.key }
+        if (at >= 0 && s.visible[at].key in keys) {
+            val neighbour = s.visible.drop(at + 1).firstOrNull { it.key !in keys }
+                ?: s.visible.take(at).lastOrNull { it.key !in keys }
+            if (neighbour != null) select(neighbour)
+        }
+        // One index write for all of them; NonCancellable so leaving the screen doesn't stop it partway.
+        return viewModelScope.launch(NonCancellable) {
+            try {
+                library.deleteAll(keys)
+            } catch (e: Exception) {
+                // E.g. the disk is full and the index can't be rewritten: nothing was deleted.
+                _state.update { it.copy(message = deleteFailed(keys.size)) }
+                return@launch
+            }
+            // If this fails, the next load's prune drops the levels from their collections.
+            saveCollections { removeLevels(keys) }
         }
     }
 
@@ -329,6 +357,8 @@ class LibraryViewModel(
 
     companion object {
         const val DELETE_FAILED = "Couldn't delete the level"
+
+        fun deleteFailed(count: Int) = if (count == 1) DELETE_FAILED else "Couldn't delete $count levels"
         const val COLLECTIONS_SAVE_FAILED = "Couldn't save collections"
         const val COLLECTIONS_RECOVERED = "The collections list was damaged and has been reset"
     }

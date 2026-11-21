@@ -45,6 +45,12 @@ class Library(
         withContext(Dispatchers.IO) { cache.delete(released) }
     }
 
+    /** Removes the levels [keys] (one index write) and deletes their files that no other downloaded level uses. */
+    suspend fun deleteAll(keys: Set<LevelKey>) = mutex.withLock {
+        val released = index.removeAll(keys)
+        withContext(Dispatchers.IO) { cache.delete(released) }
+    }
+
     /** The downloaded level's keys for [my.fumui.sairitsu.gameplay.LevelLoader]; null when not downloaded. */
     fun local(key: LevelKey): LocalLevel? = index.get(key)?.let { LocalLevel(it.detailsKey, it.resourceKeys) }
 

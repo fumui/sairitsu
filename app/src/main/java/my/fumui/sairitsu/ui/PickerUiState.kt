@@ -53,4 +53,6 @@ data class PickerUiState(
     val sync: SyncStatus = SyncStatus.Idle,
     val catalogCount: Int = 0,
     val catalogComplete: Boolean = false,
+    /** Names of the levels picked in selection mode; non-empty means selection mode is on. */
+    val selection: Set<String> = emptySet(),
 )

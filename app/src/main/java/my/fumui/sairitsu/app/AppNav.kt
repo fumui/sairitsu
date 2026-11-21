@@ -377,6 +377,11 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
                     downloaded = downloaded,
                     states = mine,
                     onDownload = download,
+                    onDownloadAll = { levels ->
+                        val title = (vm.state.value.serverInfo as? Loadable.Ready)?.value?.title?.let(localizer::text)
+                            ?: server.linkAddress
+                        services.downloader.downloadAll(server, title, levels)
+                    },
                     onCancel = { name -> services.downloader.cancel(LevelKey(server.linkAddress, name)) },
                     collectionRows = { level ->
                         val key = keyOf(level)

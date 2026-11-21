@@ -10,7 +10,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,6 +57,8 @@ import kotlinx.coroutines.launch
 
 private const val LIST_WEIGHT = 0.38f
 private const val PANE_WEIGHT = 0.62f
+/** Bulk downloads of more levels than this ask for confirmation first. */
+private const val CONFIRM_DOWNLOADS_OVER = 20
 
 /** The browser's downloads: which levels (by name) are downloaded, their download states, and the actions. */
 class BrowseDownloads(
@@ -57,6 +66,8 @@ class BrowseDownloads(
     val states: Map<String, DownloadState>,
     val onDownload: (LevelItem) -> Unit,
     val onCancel: (String) -> Unit,
+    /** Queues several levels at once (one state update); returns how many were queued. */
+    val onDownloadAll: (List<LevelItem>) -> Int = { levels -> levels.forEach(onDownload); levels.size },
     /** The "Add to collection" rows for a level (pending ones for a level that isn't downloaded yet). */
     val collectionRows: (LevelItem) -> List<CollectionRow> = { emptyList() },
     /** Why a new collection name can't be used, or null. */
@@ -110,6 +121,25 @@ fun PickerScreen(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { player.stop() }
     BackHandler(enabled = state.search != null) { vm.closeSearch() }
+    // Declared later, so it wins over closing the search.
+    BackHandler(enabled = state.selection.isNotEmpty()) { vm.clearSelection() }
+
+    // A long queue (e.g. Select all over a whole saved level list) asks first; null = no dialog.
+    var confirmQueue by remember { mutableStateOf<List<LevelItem>?>(null) }
+    fun queue(levels: List<LevelItem>) {
+        val queued = if (levels.isEmpty()) 0 else downloads.onDownloadAll(levels)
+        vm.clearSelection()
+        val text = when (queued) {
+            0 -> "Already downloaded"
+            1 -> "Queued 1 level"
+            else -> "Queued " + "%,d".format(queued) + " levels"
+        }
+        scope.launch { snackbar.showSnackbar(text) }
+    }
+    fun downloadSelection() {
+        val levels = levelsToQueue(state.list.items.filter { it.name in state.selection }, downloads.downloaded, downloads.states)
+        if (levels.size > CONFIRM_DOWNLOADS_OVER) confirmQueue = levels else queue(levels)
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -119,7 +149,15 @@ fun PickerScreen(
         CompositionLocalProvider(LocalUrlResolver provides { url -> server?.resolve(url) ?: url }) {
             Column(Modifier.fillMaxSize().padding(padding).windowInsetsPadding(WindowInsets.displayCutout)) {
                 val search = state.search
-                if (search == null) {
+                if (state.selection.isNotEmpty()) {
+                    DownloadSelectionBar(
+                        count = state.selection.size,
+                        allSelected = state.list.items.all { it.name in state.selection },
+                        onClose = vm::clearSelection,
+                        onSelectAll = vm::selectAll,
+                        onDownload = ::downloadSelection,
+                    )
+                } else if (search == null) {
                     BrowseTopBar(
                         state = state,
                         localizer = localizer,
@@ -167,6 +205,12 @@ fun PickerScreen(
                         onRetry = vm::retryList,
                         modifier = Modifier.weight(LIST_WEIGHT).fillMaxHeight(),
                         downloaded = downloads.downloaded,
+                        selection = LevelSelection(
+                            active = state.selection.isNotEmpty(),
+                            isSelected = { it.name in state.selection },
+                            onStart = { levels -> vm.startSelection(levels.map { it.name }) },
+                            onToggle = { levels -> vm.toggleSelection(levels.map { it.name }) },
+                        ),
                     )
                     VerticalDivider()
                     Box(Modifier.weight(PANE_WEIGHT).fillMaxHeight()) {
@@ -205,6 +249,20 @@ fun PickerScreen(
         }
     }
 
+    confirmQueue?.let { levels ->
+        AlertDialog(
+            onDismissRequest = { confirmQueue = null },
+            title = { Text("Download " + "%,d".format(levels.size) + " levels?") },
+            text = { Text("They download one at a time and use storage on this device.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmQueue = null
+                    queue(levels)
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { confirmQueue = null }) { Text("Cancel") } },
+        )
+    }
     addFor?.let { level ->
         AddToCollectionDialog(
             rows = downloads.collectionRows(level),
@@ -225,6 +283,24 @@ fun PickerScreen(
             },
             onDismiss = { newFor = null },
         )
+    }
+}
+
+/** The browser's top row in selection mode: close, count, select all (loaded rows), and download. */
+@Composable
+private fun DownloadSelectionBar(
+    count: Int,
+    allSelected: Boolean,
+    onClose: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = "Close selection") }
+        Text("$count selected", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onSelectAll) { Text(if (allSelected) "Select none" else "Select all") }
+        IconButton(onClick = onDownload) { Icon(Icons.Outlined.Download, contentDescription = "Download selected") }
+        Spacer(Modifier.width(8.dp))
     }
 }
 

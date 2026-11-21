@@ -89,7 +89,11 @@ class CollectionStore(private val file: File, libraryKeys: () -> Set<LevelKey>) 
     }
 
     /** Drops [key] from every collection (the level left the library). */
-    suspend fun removeLevel(key: LevelKey) = change { list -> list.map { c -> c.copy(levels = c.levels - key) } }
+    suspend fun removeLevel(key: LevelKey) = removeLevels(setOf(key))
+
+    /** Drops [keys] from every collection (the levels left the library). */
+    suspend fun removeLevels(keys: Set<LevelKey>) =
+        change { list -> list.map { c -> c.copy(levels = c.levels.filterNot { it in keys }) } }
 
     private val _pending = MutableStateFlow<Map<LevelKey, Set<String>>>(emptyMap())
 

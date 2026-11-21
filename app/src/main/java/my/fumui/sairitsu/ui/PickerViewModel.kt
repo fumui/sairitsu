@@ -113,6 +113,22 @@ class PickerViewModel(
 
     fun select(level: LevelItem) = selectLevel(level)
 
+    /** Starts selection mode with [names] (a long-pressed row's charts, or one chart). */
+    fun startSelection(names: Collection<String>) = _state.update { it.copy(selection = names.toSet()) }
+
+    /** Deselects [names] when all of them are selected, else selects them all. */
+    fun toggleSelection(names: Collection<String>) = _state.update { s ->
+        s.copy(selection = if (s.selection.containsAll(names)) s.selection - names.toSet() else s.selection + names)
+    }
+
+    /** Selects every level loaded so far; when they're all selected already, clears the selection. */
+    fun selectAll() = _state.update { s ->
+        val shown = s.list.items.mapTo(HashSet()) { it.name }
+        s.copy(selection = if (s.selection.containsAll(shown)) emptySet() else shown)
+    }
+
+    fun clearSelection() = _state.update { it.copy(selection = emptySet()) }
+
     fun loadMore() {
         val s = _state.value
         val list = s.list
@@ -379,6 +395,8 @@ class PickerViewModel(
         debounceJob?.cancel()
         listJob?.cancel()
         val gen = ++generation
+        // The selected rows are about to be replaced.
+        _state.update { it.copy(selection = emptySet()) }
         val s = _state.value
         val section = s.activeSection
         if (s.search == null && section != null) {
