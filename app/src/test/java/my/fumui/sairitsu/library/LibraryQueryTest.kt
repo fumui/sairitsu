@@ -15,6 +15,35 @@ class LibraryQueryTest {
 
     private fun key(name: String) = LevelKey("sonolus.sbuga.com", name)
 
+    // FIRE BIRD's Expert was downloaded after High Tide; its other charts before.
+    private val split = listOf(
+        entry("fb-expert", title = "FIRE BIRD", artists = "Moona", addedAt = 3, rating = 29.0),
+        entry("ht", title = "High Tide", artists = "Moona", addedAt = 2, rating = 20.0),
+        entry("fb-easy", title = "FIRE BIRD", artists = "Moona", addedAt = 1, rating = 5.0),
+    )
+
+    @Test
+    fun songOrderSortsKeepASongsChartsTogether() {
+        for (sort in listOf(LibrarySort.Added, LibrarySort.LastPlayed)) {
+            assertEquals(listOf("fb-expert", "fb-easy", "ht"), names(applyQuery(split, emptyMap(), LibraryQuery(sort = sort))))
+        }
+    }
+
+    @Test
+    fun chartOrderSortsDoNotCluster() {
+        assertEquals(listOf("fb-expert", "ht", "fb-easy"), names(applyQuery(split, emptyMap(), LibraryQuery(sort = LibrarySort.Rating))))
+    }
+
+    @Test
+    fun sameSongFromAnotherServerIsNotPulledTogether() {
+        val entries = listOf(
+            entry("a", title = "S", addedAt = 3),
+            entry("b", title = "T", addedAt = 2),
+            entry("c", title = "S", addedAt = 1, server = "other.example"),
+        )
+        assertEquals(listOf("a", "b", "c"), names(applyQuery(entries, emptyMap(), LibraryQuery())))
+    }
+
     @Test
     fun collectionFilterIsOrAcrossCollections() {
         val entries = listOf(entry("a", addedAt = 3), entry("b", addedAt = 2), entry("c", addedAt = 1))

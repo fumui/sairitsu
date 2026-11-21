@@ -91,10 +91,24 @@ fun applyQuery(
         LibrarySort.BestScore -> nullsLast(query.descending) { stats[it.key]?.best?.arcadeScore?.toLong() }
     }
     val directed = if (query.descending && query.sort !in NULLABLE_SORTS) byKey.reversed() else byKey
-    return matching.sortedWith(directed.then(newestFirst))
+    val sorted = matching.sortedWith(directed.then(newestFirst))
+    return if (query.sort in CHART_SORTS) sorted else clusterSongs(sorted)
 }
 
 private val NULLABLE_SORTS = setOf(LibrarySort.LastPlayed, LibrarySort.BestScore)
+
+/** Sorts by something each chart has on its own: a song's charts may sit apart. Other sorts keep a song together. */
+private val CHART_SORTS = setOf(LibrarySort.Rating, LibrarySort.BestScore)
+
+/**
+ * Moves every chart of a song (same server, title, artists, author and engine) next to its first chart in [sorted],
+ * so the list shows the song as one row where its first chart lands.
+ */
+private fun clusterSongs(sorted: List<LibraryEntry>): List<LibraryEntry> {
+    val songs = LinkedHashMap<List<Any?>, MutableList<LibraryEntry>>()
+    sorted.forEach { e -> songs.getOrPut(listOf(e.server, e.title, e.artists, e.author, e.engineName)) { ArrayList() } += e }
+    return if (songs.size == sorted.size) sorted else songs.values.flatten()
+}
 
 /** Everything a search looks in, lowercased; raw `##LOCALIZE:` texts keep every language. */
 private fun haystack(e: LibraryEntry, extra: String?): String =
