@@ -3,6 +3,7 @@ package my.fumui.sairitsu.data
 import my.fumui.sairitsu.data.model.ItemList
 import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.data.model.ServerJson
+import my.fumui.sairitsu.data.model.savesLevelList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +38,8 @@ sealed interface SyncStatus {
 
 /**
  * One server's saved level list, newest first (the server's default order). [complete] once the whole
- * list has been downloaded; until then [items] grows as pages arrive.
+ * list has been downloaded; until then [items] grows as pages arrive. [disabled] when the server opted out
+ * of having its list saved (nothing is downloaded or kept for it).
  */
 data class CatalogState(
     val items: List<LevelItem> = emptyList(),
@@ -45,6 +47,7 @@ data class CatalogState(
     val complete: Boolean = false,
     val status: SyncStatus = SyncStatus.Idle,
     val syncedAt: Long = 0,
+    val disabled: Boolean = false,
 )
 
 /** The bits of a catalog the Online Servers cards show, without loading its levels. */
@@ -217,6 +220,20 @@ class LevelCatalog internal constructor(
             state.value = CatalogState(items, loaded = true, complete = meta.complete, syncedAt = meta.syncedAt)
         }
         val source = sourceFor(server)
+        // A server that opts out never has a list saved; offline (info unreachable) a saved copy stays usable.
+        val optedOut = try {
+            !source.serverInfo().savesLevelList
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+        if (optedOut) {
+            files.delete(key)
+            state.value = CatalogState(loaded = true, disabled = true)
+            _summaries.update { it - key }
+            return
+        }
         try {
             when {
                 full -> redownload(key, source)

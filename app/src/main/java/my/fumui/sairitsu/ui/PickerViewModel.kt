@@ -17,6 +17,7 @@ import my.fumui.sairitsu.data.model.ServerInfo
 import my.fumui.sairitsu.data.ServerApiException
 import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.data.model.ServerJson
+import my.fumui.sairitsu.data.model.savesLevelList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -63,6 +64,12 @@ class PickerViewModel(
     /** Whether the list on screen comes from the catalog (and follows its updates). */
     private var listFromCatalog = false
 
+    /** Set once the server opted out of a saved level list: from then on there is no catalog. */
+    private var catalogOff = false
+
+    /** The [catalog] unless the server opted out of it. */
+    private val activeCatalog get() = catalog.takeUnless { catalogOff }
+
     private var source: LevelSource? = null
     private var connectJob: Job? = null
     private var listJob: Job? = null
@@ -80,6 +87,8 @@ class PickerViewModel(
         catalog?.let { handle ->
             viewModelScope.launch {
                 handle.state.collect { cat ->
+                    if (cat.disabled) disableCatalog()
+                    if (catalogOff) return@collect
                     _state.update { it.copy(sync = cat.status, catalogCount = cat.items.size, catalogComplete = cat.complete) }
                     if (listFromCatalog) showLocal(generation, keepList = true)
                 }
@@ -89,12 +98,12 @@ class PickerViewModel(
 
     /** Tries the saved level list's sync again after it failed. */
     fun retrySync() {
-        catalog?.open()
+        activeCatalog?.open()
     }
 
     /** Downloads the server's whole level list again (picks up edited and removed levels). */
     fun refreshCatalog() {
-        catalog?.refresh()
+        activeCatalog?.refresh()
     }
 
     fun selectSection(index: Int?) {
@@ -128,7 +137,7 @@ class PickerViewModel(
             return
         }
         if (listFromCatalog) {
-            catalog?.open()
+            activeCatalog?.open()
             return
         }
         if (s.list.items.isEmpty()) {
@@ -211,8 +220,9 @@ class PickerViewModel(
             serverInfo = Loadable.Loading,
             list = ListState(loading = true),
         )
-        if (catalog != null) {
-            catalog.open()
+        val saved = activeCatalog
+        if (saved != null) {
+            saved.open()
             showLocal(generation, keepList = false)
         } else {
             // The first page (All, no search) needs nothing from the server info: fetch it alongside.
@@ -229,6 +239,7 @@ class PickerViewModel(
                 _state.update {
                     it.copy(serverInfo = Loadable.Ready(info), sections = levels.sections, searches = levels.searches)
                 }
+                if (!info.savesLevelList) disableCatalog()
                 onServerInfo(info)
             } catch (e: CancellationException) {
                 throw e
@@ -249,12 +260,27 @@ class PickerViewModel(
     }
 
     /**
+     * The server opted out of a saved level list (told by its info or by the catalog, whichever comes
+     * first): browse and search through the server only, keeping any search already typed.
+     */
+    private fun disableCatalog() {
+        if (catalogOff) return
+        catalogOff = true
+        _state.update { it.copy(sync = SyncStatus.Idle, catalogCount = 0, catalogComplete = false) }
+        if (listFromCatalog) {
+            listFromCatalog = false
+            listJob?.cancel()
+            startServerList(generation)
+        }
+    }
+
+    /**
      * Shows the catalog's levels (filtered by the open search) as the list. A search the catalog can't
      * answer, or any search before the catalog is complete, goes to the server instead.
      * [keepList] leaves the current list up while recomputing (catalog updates).
      */
     private fun showLocal(gen: Int, keepList: Boolean) {
-        val handle = catalog ?: return
+        val handle = activeCatalog ?: return
         val search = _state.value.search
         if (search != null && !handle.state.value.complete) {
             listFromCatalog = false
@@ -362,7 +388,7 @@ class PickerViewModel(
             autoSelect()
             return
         }
-        if (catalog != null) {
+        if (activeCatalog != null) {
             showLocal(gen, keepList = false)
             return
         }

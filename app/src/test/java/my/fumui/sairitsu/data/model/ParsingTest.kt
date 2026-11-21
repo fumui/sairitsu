@@ -85,6 +85,14 @@ class ParsingTest {
     }
 
     @Test
+    fun serverInfoReadsSairitsuFlags() {
+        val off = ServerJson.decodeFromString<ServerInfo>("""{"title":"T","sairitsu":{"levelCatalog":false}}""")
+        assertEquals(false, off.savesLevelList)
+        val plain = ServerJson.decodeFromString<ServerInfo>("""{"title":"T"}""")
+        assertEquals(true, plain.savesLevelList)
+    }
+
+    @Test
     fun playlistWithLevelsParses() {
         val playlist = ServerJson.decodeFromString<PlaylistSummary>(
             """{"name":"p","title":"Pack","subtitle":"2 levels","author":"A","tags":[],

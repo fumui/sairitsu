@@ -105,6 +105,13 @@ data class ServerInfoButton(val type: String, val title: String? = null)
 @Serializable
 data class ServerConfiguration(val options: List<SearchOption> = emptyList())
 
+/** What a server tells Sairitsu about itself, under `sairitsu` in its info. */
+@Serializable
+data class SairitsuServerFlags(
+    /** False for servers too big to save as a level list: browsed and searched through the server only. */
+    val levelCatalog: Boolean = true,
+)
+
 @Serializable
 data class ServerInfo(
     val title: String,
@@ -112,7 +119,11 @@ data class ServerInfo(
     val banner: Srl? = null,
     val buttons: List<ServerInfoButton> = emptyList(),
     val configuration: ServerConfiguration? = null,
+    val sairitsu: SairitsuServerFlags? = null,
 )
+
+/** Whether Sairitsu saves this server's level list (see [my.fumui.sairitsu.data.LevelCatalog]). */
+val ServerInfo.savesLevelList: Boolean get() = sairitsu?.levelCatalog != false
 
 /** A playlist from a server's list or details; [levels] may be empty in a list item. */
 @Serializable

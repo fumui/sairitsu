@@ -5,6 +5,7 @@ import my.fumui.sairitsu.data.model.ItemInfo
 import my.fumui.sairitsu.data.model.ItemList
 import my.fumui.sairitsu.data.model.ItemSection
 import my.fumui.sairitsu.data.model.LevelItem
+import my.fumui.sairitsu.data.model.SairitsuServerFlags
 import my.fumui.sairitsu.data.model.ServerInfo
 import my.fumui.sairitsu.data.model.ServerJson
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -32,7 +34,9 @@ class LevelCatalogTest {
         var failOnPage: Int? = null
         var newest: List<LevelItem> = emptyList()
 
-        override suspend fun serverInfo() = ServerInfo("Example")
+        var info: suspend () -> ServerInfo = { ServerInfo("Example") }
+
+        override suspend fun serverInfo() = info()
 
         override suspend fun levelInfo() = ItemInfo(
             sections = listOf(
@@ -154,5 +158,63 @@ class LevelCatalogTest {
         advanceUntilIdle()
         assertEquals(listOf(0), source.pagesFetched)
         assertEquals(listOf("a", "b"), names(again))
+    }
+
+    @Test
+    fun optedOutServerIsNeverDownloaded() = runTest {
+        val source = PagedServer(levels("a", "b", "c", "d"))
+        catalog(source).also {
+            it.open(server)
+            advanceUntilIdle()
+        }
+        assertTrue(File(tmp.root, "example.com").exists())
+
+        source.info = { ServerInfo("Example", sairitsu = SairitsuServerFlags(levelCatalog = false)) }
+        source.pagesFetched.clear()
+        val catalog = catalog(source)
+        catalog.loadSummaries(listOf("example.com"))
+        advanceUntilIdle()
+        assertEquals(4, catalog.summaries.value["example.com"]?.count)
+        catalog.open(server)
+        advanceUntilIdle()
+        assertEquals(emptyList<Int>(), source.pagesFetched)
+        assertTrue(catalog.state(server).value.disabled)
+        assertEquals(emptyList<String>(), names(catalog))
+        assertEquals(null, catalog.summaries.value["example.com"])
+        assertTrue(!File(tmp.root, "example.com").exists())
+    }
+
+    @Test
+    fun savedLevelsLoadWithoutWaitingForServerInfo() = runTest {
+        val source = PagedServer(levels("a", "b", "c", "d"))
+        catalog(source).also {
+            it.open(server)
+            advanceUntilIdle()
+        }
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        source.info = { release.await(); ServerInfo("Example") }
+        val again = catalog(source)
+        again.open(server)
+        advanceUntilIdle()
+        assertTrue(again.state(server).value.loaded)
+        assertEquals(listOf("a", "b", "c", "d"), names(again))
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("a", "b", "c", "d"), names(again))
+    }
+
+    @Test
+    fun serverInfoFailureKeepsSavedCatalog() = runTest {
+        val source = PagedServer(levels("a", "b", "c", "d"))
+        catalog(source).also {
+            it.open(server)
+            advanceUntilIdle()
+        }
+        source.info = { throw IOException("offline") }
+        val again = catalog(source)
+        again.open(server)
+        advanceUntilIdle()
+        assertEquals(listOf("a", "b", "c", "d"), names(again))
+        assertTrue(!again.state(server).value.disabled)
     }
 }

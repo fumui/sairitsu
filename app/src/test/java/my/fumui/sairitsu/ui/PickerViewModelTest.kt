@@ -171,6 +171,38 @@ class PickerViewModelTest {
     }
 
     @Test
+    fun optedOutCatalogListsFromServer() = test {
+        val cat = FakeCatalog(my.fumui.sairitsu.data.CatalogState(loaded = true))
+        val vm = withCatalog(cat)
+        cat.state.value = my.fumui.sairitsu.data.CatalogState(loaded = true, disabled = true)
+        advanceUntilIdle()
+        assertEquals(20, vm.ui.list.items.size)
+        assertEquals(null, source.listCalls.first().second)
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals("6853", source.listCalls.last().second)
+        assertEquals(40, vm.ui.list.items.size)
+        assertEquals(my.fumui.sairitsu.data.SyncStatus.Idle, vm.ui.sync)
+    }
+
+    @Test
+    fun serverInfoOptOutBeatsCatalog() = test {
+        source.server = {
+            my.fumui.sairitsu.data.model.ServerInfo(
+                "Mania",
+                sairitsu = my.fumui.sairitsu.data.model.SairitsuServerFlags(levelCatalog = false),
+            )
+        }
+        val cat = FakeCatalog(my.fumui.sairitsu.data.CatalogState())
+        val vm = withCatalog(cat)
+        assertEquals(20, vm.ui.list.items.size)
+        assertTrue(source.listCalls.isNotEmpty())
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals(40, vm.ui.list.items.size)
+    }
+
+    @Test
     fun catalogListGrowsWhileDownloading() = test {
         val cat = FakeCatalog(
             my.fumui.sairitsu.data.CatalogState(saved.take(2), loaded = true, status = my.fumui.sairitsu.data.SyncStatus.Downloading(2, 4)),
