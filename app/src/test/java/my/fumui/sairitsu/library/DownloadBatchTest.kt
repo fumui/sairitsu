@@ -3,6 +3,7 @@ package my.fumui.sairitsu.library
 import my.fumui.sairitsu.data.LevelKey
 import my.fumui.sairitsu.gameplay.LoadProgress
 import my.fumui.sairitsu.gameplay.ResourceKind
+import my.fumui.sairitsu.text.Localizer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -47,5 +48,19 @@ class DownloadBatchTest {
     fun fractionFromKnownByteTotal() {
         val running = DownloadState.Running(LoadProgress(2, 6, ResourceKind.LEVEL_DATA, 50, 200))
         assertEquals(0.25f, DownloadBatch().update(mapOf(k("a") to running))!!.fraction)
+    }
+
+    @Test
+    fun textResolvesLocalizedTitle() {
+        val p = BatchProgress(24, 40, k("a"), null)
+        val title = """##LOCALIZE:{"en":"Fleur","ja":"フルール"}"""
+        assertEquals("24 of 40 · フルール", p.text(title, Localizer("ja")))
+        assertEquals("24 of 40 · Fleur", p.text(title, Localizer("id")))
+    }
+
+    @Test
+    fun textFallsBackToLevelNameThenCount() {
+        assertEquals("1 of 2 · a", BatchProgress(1, 2, k("a"), null).text(null, Localizer("en")))
+        assertEquals("1 of 2", BatchProgress(1, 2, null, null).text(null, Localizer("en")))
     }
 }

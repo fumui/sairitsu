@@ -16,6 +16,8 @@ import android.util.Log
 import my.fumui.sairitsu.MainActivity
 import my.fumui.sairitsu.R
 import my.fumui.sairitsu.app.AppServices
+import my.fumui.sairitsu.text.Localizer
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -136,8 +138,8 @@ class DownloadService : Service() {
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_download), "Cancel all", cancel).build())
         if (progress == null) return builder.setProgress(0, 0, true).build()
-        val count = "${progress.done} of ${progress.total}"
-        val text = progress.current?.let { "$count · ${downloader.titleOf(it) ?: it.level}" } ?: count
+        val localizer = Localizer(Localizer.serverLanguage(Locale.getDefault()))
+        val text = progress.text(progress.current?.let(downloader::titleOf), localizer)
         // The bar is the batch; the running level's bytes fill its share.
         val filled = progress.done * 100 + ((progress.fraction ?: 0f) * 100).toInt()
         return builder.setContentText(text).setProgress(progress.total * 100, filled, false).build()
