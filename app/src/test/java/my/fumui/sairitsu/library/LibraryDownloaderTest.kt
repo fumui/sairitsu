@@ -198,4 +198,42 @@ class LibraryDownloaderTest {
         withTimeout(5_000) { while (downloader.states.value.isNotEmpty()) delay(5) }
         assertEquals(setOf("a", "b", "c"), library.index.entries.value.mapTo(HashSet()) { it.name })
     }
+
+    @Test
+    fun cancelAllCancelsRunningAndQueued() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        downloader.downloadAll(server, "Sbuga", listOf(level("a"), level("b"), level("c")))
+        awaitState(key("a")) { it is DownloadState.Running }
+        downloader.cancelAll()
+        withTimeout(5_000) { while (downloader.states.value.isNotEmpty()) delay(5) }
+        assertTrue(library.index.entries.value.isEmpty())
+        assertEquals(1, source.loads.get()) // b and c never started
+    }
+
+    /** One state update for the whole queue: removing levels one by one copies a large map once per level. */
+    @Test
+    fun cancelAllClearsStatesAtOnce() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        downloader.downloadAll(server, "Sbuga", (1..500).map { level("l$it") })
+        awaitState(key("l1")) { it is DownloadState.Running }
+        downloader.cancelAll()
+        assertTrue(downloader.states.value.isEmpty())
+        assertNull(downloader.titleOf(key("l2")))
+    }
+
+    @Test
+    fun titleOfIsTheQueuedLevelsTitle() = runBlocking {
+        setup()
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        downloader.download(server, "Sbuga", LevelItem(name = "a", title = "Song A"))
+        assertEquals("Song A", downloader.titleOf(key("a")))
+        assertNull(downloader.titleOf(key("zzz")))
+        gate.complete(Unit)
+        Unit
+    }
 }

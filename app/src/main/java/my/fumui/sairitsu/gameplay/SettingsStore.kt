@@ -120,6 +120,13 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[SAVE_LEVELS_I_PLAY] = on }
     }
 
+    /** Whether the notification permission was asked for already (on the first download); it is asked only once. */
+    val notificationsAsked: Flow<Boolean> = store.data.map { it[NOTIFICATIONS_ASKED] ?: false }
+
+    suspend fun setNotificationsAsked() {
+        store.edit { it[NOTIFICATIONS_ASKED] = true }
+    }
+
     /** "Show FPS": the render thread's frames per second in a corner of the level. Default off. */
     val showFps: Flow<Boolean> = store.data.map { it[SHOW_FPS] ?: false }
 
@@ -215,6 +222,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         val ITEMS_MIGRATED = booleanPreferencesKey("items_migrated")
         val SAVE_LEVELS_I_PLAY = booleanPreferencesKey("save_levels_i_play")
         val SHOW_FPS = booleanPreferencesKey("show_fps")
+        val NOTIFICATIONS_ASKED = booleanPreferencesKey("notifications_asked")
         val EFFECT_VOLUME = floatPreferencesKey("effect_volume")
         val BGM_VOLUME = floatPreferencesKey("bgm_volume")
         val AUDIO_OFFSET = floatPreferencesKey("audio_offset")

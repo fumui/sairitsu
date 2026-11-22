@@ -52,6 +52,9 @@ class LibraryDownloader(
 ) {
     private val mutex = Mutex()
     private val jobs = HashMap<LevelKey, Job>()
+
+    /** The title of each level in [states], for the download notification. Guarded by `this`. */
+    private val titles = HashMap<LevelKey, String>()
     private val _states = MutableStateFlow<Map<LevelKey, DownloadState>>(emptyMap())
     val states: StateFlow<Map<LevelKey, DownloadState>> = _states.asStateFlow()
 
@@ -60,6 +63,7 @@ class LibraryDownloader(
     fun download(server: ServerAddress, serverTitle: String, level: LevelItem): Job? {
         val key = LevelKey(server.linkAddress, level.name)
         if (jobs[key]?.isActive == true) return null
+        titles[key] = level.title
         set(key, DownloadState.Queued)
         return start(server, serverTitle, level, key)
     }
@@ -74,6 +78,7 @@ class LibraryDownloader(
             .map { LevelKey(server.linkAddress, it.name) to it }
             .filter { (key, _) -> jobs[key]?.isActive != true }
         if (todo.isEmpty()) return 0
+        for ((key, level) in todo) titles[key] = level.title
         _states.update { states -> states + todo.map { (key, _) -> key to DownloadState.Queued } }
         for ((key, level) in todo) start(server, serverTitle, level, key)
         return todo.size
@@ -116,6 +121,25 @@ class LibraryDownloader(
         synchronized(this) { jobs[key] }?.cancel()
     }
 
+    /**
+     * Cancels every queued and running download and drops them from [states] in one update: a queue of thousands
+     * leaving one by one would copy the state map once per level. (A job cancelled before it started never reaches
+     * its own cleanup either.)
+     */
+    fun cancelAll() {
+        val cancelled = synchronized(this) {
+            val keys = jobs.keys.toSet()
+            keys.forEach { titles.remove(it) }
+            jobs.values.toList().forEach { it.cancel() }
+            keys
+        }
+        _states.update { states -> states.filterKeys { it !in cancelled } }
+    }
+
+    /** The title of [key] while it is in [states]; null otherwise. */
+    @Synchronized
+    fun titleOf(key: LevelKey): String? = titles[key]
+
     /** Adds a level that was just loaded for playing ("Save levels I play"); fetches its cover and preview first. */
     suspend fun saveLoaded(server: ServerAddress, serverTitle: String, loaded: LoadedResources) {
         save(server, serverTitle, loaded)
@@ -137,6 +161,7 @@ class LibraryDownloader(
     }
 
     private fun set(key: LevelKey, state: DownloadState?) {
+        if (state == null) synchronized(this) { titles.remove(key) }
         _states.update { if (state == null) it - key else it + (key to state) }
     }
 }

@@ -1,7 +1,12 @@
 package my.fumui.sairitsu.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
@@ -80,6 +85,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import java.io.IOException
+import my.fumui.sairitsu.gameplay.SettingsStore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
@@ -363,9 +370,11 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
             val collections by services.collections.collections.collectAsState()
             val pending by services.collections.pending.collectAsState()
             val sorted = remember(collections) { collections.sortedByName() }
+            val askNotifications = rememberAskNotifications(services.settings)
             val download = { level: LevelItem ->
                 val title = (vm.state.value.serverInfo as? Loadable.Ready)?.value?.title?.let(localizer::text)
                     ?: server.linkAddress
+                askNotifications()
                 services.downloader.download(server, title, level)
                 Unit
             }
@@ -380,6 +389,7 @@ fun AppNav(services: AppServices, onExit: () -> Unit) {
                     onDownloadAll = { levels ->
                         val title = (vm.state.value.serverInfo as? Loadable.Ready)?.value?.title?.let(localizer::text)
                             ?: server.linkAddress
+                        askNotifications()
                         services.downloader.downloadAll(server, title, levels)
                     },
                     onCancel = { name -> services.downloader.cancel(LevelKey(server.linkAddress, name)) },
@@ -488,9 +498,38 @@ private fun playlistDownloads(services: AppServices, server: ServerAddress): Pla
         mine.values.filterIsInstance<DownloadState.Failed>().map { f -> f.resource?.let { "$it: ${f.message}" } ?: f.message }
     }
     val serverTitle = servers.firstOrNull { it.address == link }?.title ?: link
+    val askNotifications = rememberAskNotifications(services.settings)
     return PlaylistDownloads(downloaded, active, failures) { name, levels ->
+        askNotifications()
         // On the app's scope, so leaving the screen doesn't stop it; the screen only waits for the outcome.
         services.scope.async { services.playlistSaver.save(server, serverTitle, name, levels) }.await()
+    }
+}
+
+/**
+ * Asks for the notification permission (Android 13+) the first time a download is queued, so the download notification
+ * shows; never again after that, whatever the answer. Downloads run either way.
+ */
+@Composable
+private fun rememberAskNotifications(settings: SettingsStore): () -> Unit {
+    val context = LocalContext.current
+    // Until the store answers, assume asked: nothing is asked twice.
+    val asked by settings.notificationsAsked.collectAsState(initial = true)
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    return {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !asked &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            scope.launch {
+                try {
+                    settings.setNotificationsAsked()
+                } catch (e: IOException) {
+                    // Not saved: the next download asks again.
+                }
+            }
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }
 

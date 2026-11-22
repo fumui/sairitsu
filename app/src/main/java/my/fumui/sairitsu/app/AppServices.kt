@@ -25,6 +25,8 @@ import my.fumui.sairitsu.gameplay.ItemPictures
 import my.fumui.sairitsu.gameplay.ItemMigration
 import my.fumui.sairitsu.library.CollectionStore
 import my.fumui.sairitsu.library.Library
+import my.fumui.sairitsu.library.DownloadService
+import my.fumui.sairitsu.library.DownloadState
 import my.fumui.sairitsu.library.LibraryDownloader
 import my.fumui.sairitsu.library.LibraryIndex
 import my.fumui.sairitsu.library.LibraryQueryStore
@@ -34,6 +36,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.io.File
@@ -76,6 +80,15 @@ class AppServices private constructor(context: Context) {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val downloader = LibraryDownloader(loader, library, scope)
+
+    init {
+        // Downloads only start from a tap in the app, so the app is in the foreground when this starts the service.
+        scope.launch {
+            downloader.states.map { states -> states.values.any { it !is DownloadState.Failed } }
+                .distinctUntilChanged()
+                .collect { active -> if (active) DownloadService.start(context) }
+        }
+    }
 
     /** "Download all as collection" for a server's playlists. */
     val playlistSaver = PlaylistSaver(
