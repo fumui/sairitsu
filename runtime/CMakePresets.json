@@ -15,6 +15,17 @@
       }
     },
     {
+      "name": "linux",
+      "displayName": "Linux (clang 20, Ninja, RelWithDebInfo; the runtime/Dockerfile image)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
       "name": "android-arm64",
       "displayName": "Android arm64-v8a sr_tests (NDK 28.2.13676358, API 26, Ninja, RelWithDebInfo)",
       "generator": "Ninja",
@@ -29,12 +40,18 @@
   ],
   "buildPresets": [
     { "name": "host", "configurePreset": "host" },
+    { "name": "linux", "configurePreset": "linux" },
     { "name": "android-arm64-tests", "configurePreset": "android-arm64", "targets": ["sr_tests"] }
   ],
   "testPresets": [
     {
       "name": "host",
       "configurePreset": "host",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux",
       "output": { "outputOnFailure": true }
     }
   ]

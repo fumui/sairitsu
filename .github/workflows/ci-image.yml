@@ -1,0 +1,29 @@
+name: CI image
+
+# Builds runtime/Dockerfile and pushes it to GHCR. CI pins the image by digest, so a new image is only used once
+# the digest in ci.yml is updated to the one this run prints in its summary.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [runtime/Dockerfile]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/sairitsu-ci
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and push
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" runtime
+          docker push --all-tags "$IMAGE"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
+          echo "Pin in ci.yml: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"

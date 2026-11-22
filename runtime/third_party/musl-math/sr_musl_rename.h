@@ -53,6 +53,13 @@
 #define __powf_log2_data sr_musl___powf_log2_data
 #define __logf_data sr_musl___logf_data
 #define __log2f_data sr_musl___log2f_data
+/* Declared in libm.h but unused here; glibc's <math.h> declares its own functions under these names. */
+#define __sin sr_musl___sin
+#define __cos sr_musl___cos
+#define __tan sr_musl___tan
+#define __sinl sr_musl___sinl
+#define __cosl sr_musl___cosl
+#define __tanl sr_musl___tanl
 
 #define sqrtf __builtin_sqrtf
 #define fabsf __builtin_fabsf

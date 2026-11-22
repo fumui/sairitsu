@@ -33,7 +33,8 @@ Only two files are not byte-identical to musl, and one is new:
    long double), and `#include <endian.h>` plus `#include "fp_arch.h"` replaced by `#include "features.h"`. The
    rest, including the `asuint`/`asfloat`/`GET_FLOAT_WORD` macros and the `__math_*` declarations, is unchanged.
 2. `features.h` is new. It replaces musl's `<features.h>` and defines only `hidden` as
-   `__attribute__((__visibility__("hidden")))`.
+   `__attribute__((__visibility__("hidden")))`. Because it also shadows the C library's `<features.h>` (glibc's
+   `<math.h>` includes it), it pulls that header in with `#include_next` when one exists.
 3. `sr_musl_rename.h` is new and is force-included (`-include`) into every file in this directory by
    `runtime/CMakeLists.txt`. It includes `<math.h>`, `<stdint.h>` and `<float.h>` first (so the system declarations
    keep their names), then `#define`s every public and internal symbol defined or called here to `sr_musl_<name>`

@@ -18,7 +18,8 @@ class ServerConfigInterceptorTest {
     @Before
     fun setUp() {
         web.start()
-        val host = "127.0.0.1:${web.port}"
+        // web.url() uses hostName, which is "localhost" on some systems and "127.0.0.1" on others.
+        val host = "${web.hostName}:${web.port}"
         val configs = mapOf(
             "$host/horizon" to mapOf("genre" to "rock"),
             "$host/pjsekai" to mapOf("genre" to "pop"),
