@@ -92,6 +92,15 @@ cmake --build --preset host
 ctest --preset host
 ```
 
+On Linux, or anywhere with Docker, use the `linux` preset inside the image CI uses (`runtime/Dockerfile`,
+Ubuntu 24.04 with clang 20):
+
+```sh
+docker build -t sairitsu-ci .
+docker run --rm -v "$PWD":/src -w /src sairitsu-ci \
+  sh -c 'cmake --preset linux && cmake --build --preset linux && ctest --preset linux'
+```
+
 `ctest` runs `sr_tests` and `no_platform_libm`, which checks that no float math links against the platform
 libm. Keeping host and device results bit-identical depends on that.
 
