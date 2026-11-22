@@ -41,11 +41,11 @@ class LibraryDownloaderTest {
 
     private fun level(name: String) = LevelItem(name = name, title = name)
 
-    private fun setup() {
+    private fun setup(parallel: Int = 1) {
         cache = ResourceCache(tmp.newFolder("cache"))
         library = Library(LibraryIndex(File(tmp.root, "library.json")), cache)
         source = FakeDownloadSource(cache)
-        downloader = LibraryDownloader(source, library, scope)
+        downloader = LibraryDownloader(source, library, scope, parallel)
     }
 
     @After
@@ -53,6 +53,11 @@ class LibraryDownloaderTest {
 
     private suspend fun awaitState(key: LevelKey, predicate: (DownloadState?) -> Boolean) = withTimeout(5_000) {
         while (!predicate(downloader.states.value[key])) delay(5)
+    }
+
+    /** Queued levels start in no set order (each is its own coroutine), so wait for whichever runs first. */
+    private suspend fun awaitAnyRunning() = withTimeout(5_000) {
+        while (downloader.states.value.values.none { it is DownloadState.Running }) delay(5)
     }
 
     @Test
@@ -83,6 +88,24 @@ class LibraryDownloaderTest {
         a.join()
         b.join()
         assertEquals(setOf("a", "b"), library.index.entries.value.map { it.name }.toSet())
+    }
+
+    @Test
+    fun downloadsRunUpToTheLimitAtOnce() = runBlocking {
+        setup(parallel = 2)
+        val gate = CompletableDeferred<Unit>()
+        source.beforeLoad = { gate.await() }
+        downloader.downloadAll(server, "S", listOf(level("a"), level("b"), level("c")))
+        withTimeout(5_000) { while (source.loads.get() < 2) delay(5) }
+        delay(50)
+        val states = downloader.states.value
+        assertEquals(2, states.values.count { it is DownloadState.Running })
+        assertEquals(1, states.values.count { it == DownloadState.Queued })
+        assertEquals(2, source.loads.get())
+        gate.complete(Unit)
+        withTimeout(5_000) { while (downloader.states.value.values.any { it !is DownloadState.Failed }) delay(5) }
+        assertEquals(emptyMap<LevelKey, DownloadState>(), downloader.states.value)
+        assertEquals(setOf("a", "b", "c"), library.index.entries.value.mapTo(HashSet()) { it.name })
     }
 
     @Test
@@ -205,7 +228,7 @@ class LibraryDownloaderTest {
         val gate = CompletableDeferred<Unit>()
         source.beforeLoad = { gate.await() }
         downloader.downloadAll(server, "Sbuga", listOf(level("a"), level("b"), level("c")))
-        awaitState(key("a")) { it is DownloadState.Running }
+        awaitAnyRunning()
         downloader.cancelAll()
         withTimeout(5_000) { while (downloader.states.value.isNotEmpty()) delay(5) }
         assertTrue(library.index.entries.value.isEmpty())
@@ -219,7 +242,7 @@ class LibraryDownloaderTest {
         val gate = CompletableDeferred<Unit>()
         source.beforeLoad = { gate.await() }
         downloader.downloadAll(server, "Sbuga", (1..500).map { level("l$it") })
-        awaitState(key("l1")) { it is DownloadState.Running }
+        awaitAnyRunning()
         downloader.cancelAll()
         assertTrue(downloader.states.value.isEmpty())
         assertNull(downloader.titleOf(key("l2")))

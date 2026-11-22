@@ -10,6 +10,7 @@ import my.fumui.sairitsu.gameplay.model.MissingResource
 import my.fumui.sairitsu.gameplay.model.ResourceRef
 import my.fumui.sairitsu.gameplay.model.resolveResources
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -150,7 +151,7 @@ class LevelLoader(
             ?: throw LoadFailure(kind, null, IOException("The level has no engine configuration"))
         val key = keyOf(ref)
         try {
-            cache.file(key) ?: downloadWithRetry(ref.url, verifiedHash(ref), key, kind) { _, _ -> }
+            fetchShared(ref.url, verifiedHash(ref), key, kind) { _, _ -> }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LoadFailure) {
@@ -193,7 +194,7 @@ class LevelLoader(
             currentCoroutineContext().ensureActive()
             val key = keys.getValue(ref)
             files[ref.kind] = try {
-                cache.file(key) ?: downloadWithRetry(ref.url, verifiedHash(ref), key, ref.kind) { bytes, total ->
+                fetchShared(ref.url, verifiedHash(ref), key, ref.kind) { bytes, total ->
                     onProgress(LoadProgress(index, refs.size, ref.kind, bytes, total))
                 }
             } catch (e: CancellationException) {
@@ -254,6 +255,46 @@ class LevelLoader(
                 parseRefs(cached.readText(Charsets.UTF_8), server)
             } catch (_: Exception) {
                 throw e
+            }
+        }
+    }
+
+    /** Downloads in progress by cache key, so levels downloading at once fetch a shared (engine) file once. */
+    private val inFlight = HashMap<String, CompletableDeferred<File>>()
+
+    /**
+     * [key]'s cached file; else downloads it, or waits for a download of it already in progress. If that download is
+     * cancelled (its level was), this one fetches the file itself; if it fails, this fails the same way.
+     */
+    private suspend fun fetchShared(
+        url: String,
+        hash: String?,
+        key: String,
+        kind: ResourceKind?,
+        onBytes: (Long, Long?) -> Unit,
+    ): File {
+        while (true) {
+            cache.file(key)?.let { return it }
+            val mine = CompletableDeferred<File>()
+            val running = synchronized(inFlight) { inFlight.putIfAbsent(key, mine) }
+            if (running != null) {
+                try {
+                    return running.await()
+                } catch (e: CancellationException) {
+                    currentCoroutineContext().ensureActive() // this load itself was cancelled
+                    continue // the load fetching it was cancelled: fetch it here
+                }
+            }
+            try {
+                // A download that finished between the cache check and the claim needs no second fetch.
+                val file = cache.file(key) ?: downloadWithRetry(url, hash, key, kind, onBytes)
+                mine.complete(file)
+                return file
+            } catch (e: Throwable) {
+                mine.completeExceptionally(e)
+                throw e
+            } finally {
+                synchronized(inFlight) { inFlight.remove(key, mine) }
             }
         }
     }

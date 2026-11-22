@@ -18,8 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 
 /** Where a level's files come from: [my.fumui.sairitsu.gameplay.LevelLoader] in the app. */
@@ -42,15 +42,17 @@ sealed interface DownloadState {
 class ExtraResourceFailure(val resource: String, cause: Throwable) : Exception(cause.message, cause)
 
 /**
- * Downloads levels into the [library], one at a time (the rest wait as [DownloadState.Queued]). A level is in [states]
+ * Downloads levels into the [library], [parallel] at a time (the rest wait as [DownloadState.Queued]). A level is in [states]
  * while queued, running or failed; once downloaded it is in the library index instead.
  */
 class LibraryDownloader(
     private val source: DownloadSource,
     private val library: Library,
     private val scope: CoroutineScope,
+    private val parallel: Int = PARALLEL,
 ) {
-    private val mutex = Mutex()
+    /** At most [parallel] levels download at once; the rest wait here as Queued. */
+    private val slots = Semaphore(parallel)
     private val jobs = HashMap<LevelKey, Job>()
 
     /** The title of each level in [states], for the download notification. Guarded by `this`. */
@@ -88,7 +90,7 @@ class LibraryDownloader(
     private fun start(server: ServerAddress, serverTitle: String, level: LevelItem, key: LevelKey): Job {
         val job = scope.launch {
             try {
-                mutex.withLock {
+                slots.withPermit {
                     set(key, DownloadState.Running(null))
                     val load = suspend {
                         source.load(server, level.name) { p -> set(key, DownloadState.Running(p)) }
@@ -163,6 +165,11 @@ class LibraryDownloader(
     private fun set(key: LevelKey, state: DownloadState?) {
         if (state == null) synchronized(this) { titles.remove(key) }
         _states.update { if (state == null) it - key else it + (key to state) }
+    }
+
+    companion object {
+        /** Levels downloading at once: hides request latency, gentle on community servers. */
+        const val PARALLEL = 3
     }
 }
 

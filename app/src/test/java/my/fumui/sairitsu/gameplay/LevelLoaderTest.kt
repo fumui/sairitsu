@@ -2,6 +2,7 @@ package my.fumui.sairitsu.gameplay
 
 import my.fumui.sairitsu.data.ServerAddress
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -34,6 +35,10 @@ class LevelLoaderTest {
     private lateinit var server: ServerAddress
     private val bodies = ConcurrentHashMap<String, MutableList<String>>()
     private val hits = ConcurrentHashMap<String, Int>()
+
+    /** Delay before each resource file's response, so loads running at once overlap. */
+    @Volatile
+    private var fileDelayMs = 0L
 
     /** One distinct body per resource kind, served at /r/<wireName>. */
     private fun bodyOf(kind: ResourceKind) = "body of ${kind.wireName}"
@@ -70,7 +75,12 @@ class LevelLoaderTest {
                 hits.merge(path, 1, Int::plus)
                 val queue = bodies[path] ?: return MockResponse().setResponseCode(404)
                 val body = synchronized(queue) { if (queue.size > 1) queue.removeAt(0) else queue[0] }
-                return MockResponse().setBody(body)
+                val response = MockResponse().setBody(body)
+                return if (path.startsWith("/r/") && fileDelayMs > 0) {
+                    response.setHeadersDelay(fileDelayMs, TimeUnit.MILLISECONDS)
+                } else {
+                    response
+                }
             }
         }
         web.start()
@@ -231,6 +241,39 @@ class LevelLoaderTest {
         assertEquals(15, progress.last().done)
         assertEquals(15, progress.last().total)
         assertTrue(progress.any { it.kind == ResourceKind.LEVEL_BGM && it.bytes > 0 })
+    }
+
+    /** Levels on one engine downloading at once: each shared file is requested once, the other load waits for it. */
+    @Test
+    fun loadsAtOnceRequestEachFileOnce() = runBlocking {
+        fileDelayMs = 100
+        val l = loader()
+        withContext(Dispatchers.IO) {
+            val a = launch { l.load(server, "lvl") {} }
+            val b = launch { l.load(server, "lvl") {} }
+            a.join()
+            b.join()
+        }
+        val files = hits.filterKeys { it.startsWith("/r/") }
+        assertEquals(ResourceKind.entries.size, files.size)
+        assertEquals(emptyMap<String, Int>(), files.filterValues { it != 1 })
+    }
+
+    /** A load waiting for a file another load is fetching still finishes when that other load is cancelled. */
+    @Test
+    fun waiterFetchesItselfWhenTheOwnerIsCancelled() = runBlocking {
+        fileDelayMs = 200
+        val l = loader()
+        val result = withContext(Dispatchers.IO) {
+            val owner = launch { l.load(server, "lvl") {} }
+            kotlinx.coroutines.delay(50)
+            val waiter = async { l.load(server, "lvl") {} }
+            kotlinx.coroutines.delay(50)
+            owner.cancelAndJoin()
+            withTimeout(10_000) { waiter.await() }
+        }
+        assertEquals(ResourceKind.entries.toSet(), result.files.keys)
+        for ((k, f) in result.files) assertEquals(bodyOf(k), f.readText())
     }
 
     @Test

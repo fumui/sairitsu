@@ -38,7 +38,8 @@ class FakeDownloadSource(private val cache: ResourceCache) : DownloadSource {
         beforeLoad(level)
         onProgress(LoadProgress(0, 15, null, 0, null))
         val keys = keysOf(level)
-        for (k in keys.values) if (!cache.has(k)) cache.put(k, null) { it.write(k.toByteArray()) }
+        // One writer per file, like LevelLoader's shared downloads (loads may run at once).
+        synchronized(this) { for (k in keys.values) if (!cache.has(k)) cache.put(k, null) { it.write(k.toByteArray()) } }
         val detailsKey = "details-$level"
         cache.put(detailsKey, null) { it.write(detailsJson(level).toByteArray()) }
         val loaded = LoadedResources(keys.mapValues { cache.file(it.value)!! }, keys, detailsKey)
