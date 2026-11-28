@@ -77,7 +77,7 @@ class LibraryViewModelCollectionsTest {
     private fun key(name: String, server: String = "sonolus.sbuga.com") = LevelKey(server, name)
 
     private fun TestScope.vm(scope: PickerScope = PickerScope.All, store: LibraryQueryStore? = queryStore) =
-        LibraryViewModel(library, results, store, collections = collections, scope = scope) { e ->
+        LibraryViewModel(library, results, store, collections = collections, scope = scope, compute = dispatcher) { e ->
             ItemDetails(LevelItem(name = e.name, title = e.title))
         }.also { advanceUntilIdle() }
 

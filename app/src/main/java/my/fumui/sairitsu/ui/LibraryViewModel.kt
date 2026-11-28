@@ -20,7 +20,10 @@ import my.fumui.sairitsu.library.LibraryQuery
 import my.fumui.sairitsu.library.LibraryQueryStore
 import my.fumui.sairitsu.library.applyQuery
 import my.fumui.sairitsu.library.facets
+import my.fumui.sairitsu.library.searchHaystack
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class LibraryUiState(
     val query: LibraryQuery = LibraryQuery(),
@@ -82,6 +86,11 @@ class LibraryViewModel(
     private val history: RunHistory? = null,
     private val collections: CollectionStore? = null,
     private val scope: PickerScope = PickerScope.All,
+    /**
+     * Where the list is searched, filtered and sorted: one at a time, off the main thread, so typing in the search
+     * field never waits for a large library to be filtered.
+     */
+    private val compute: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1),
     private val readDetails: suspend (LibraryEntry) -> ItemDetails?,
 ) : ViewModel() {
     private val _state = MutableStateFlow(LibraryUiState(showRecoveredMessage = library.index.recoveredFromCorruption))
@@ -89,10 +98,19 @@ class LibraryViewModel(
 
     private var detailsJob: Job? = null
     private var runsJob: Job? = null
+    private var recomputeJob: Job? = null
 
-    /** Each downloaded level's description (readings like romaji live there), read once for search. */
-    private val searchText = HashMap<LevelKey, String>()
+    /**
+     * Each downloaded level's description (readings like romaji live there), read once for search. Replaced, never
+     * changed in place, since [compute] reads it.
+     */
+    @Volatile
+    private var searchText: Map<LevelKey, String> = emptyMap()
     private var searchTextJob: Job? = null
+
+    /** Each level's [searchHaystack] and what it was built from; only [compute] touches it. */
+    private val haystacks = HashMap<LevelKey, Haystack>()
+    private var haystackEntries: List<LibraryEntry>? = null
 
     /** Where the deleted entry was in the list, so the selection moves to its neighbour. */
     private var deletedAt: Int? = null
@@ -302,6 +320,7 @@ class LibraryViewModel(
         val missing = library.index.entries.value.filter { it.key !in searchText }
         if (missing.isEmpty()) return
         searchTextJob = viewModelScope.launch {
+            val read = HashMap<LevelKey, String>()
             missing.forEach { entry ->
                 val details = try {
                     readDetails(entry)
@@ -310,25 +329,67 @@ class LibraryViewModel(
                 } catch (e: Exception) {
                     null
                 }
-                searchText[entry.key] = details?.description.orEmpty()
+                read[entry.key] = details?.description.orEmpty()
+                // A large library takes a while: searches meanwhile see what's read so far.
+                if (read.size >= SEARCH_TEXT_BATCH) {
+                    searchText = searchText + read
+                    read.clear()
+                }
             }
+            searchText = searchText + read
             if (_state.value.query.text.isNotBlank()) recompute()
             // Entries added while reading are picked up on the next pass.
             if (library.index.entries.value.any { it.key !in searchText }) loadSearchText()
         }
     }
 
+    /** Filters on [compute], then shows the result; a newer call drops an older one's result. */
     private fun recompute() {
         val s = _state.value
         if (!s.ready) return
         val all = library.index.entries.value
+        val descriptions = searchText
+        recomputeJob?.cancel()
+        recomputeJob = viewModelScope.launch {
+            show(withContext(compute) { filter(all, descriptions, s) })
+        }
+    }
+
+    private class Filtered(
+        val visible: List<LibraryEntry>,
+        val facets: LibraryFacets,
+        val scopeEmpty: Boolean,
+        val scopedKeys: Set<LevelKey>,
+    )
+
+    /** The scope's levels under [s]'s query; runs on [compute]. */
+    private fun filter(all: List<LibraryEntry>, descriptions: Map<LevelKey, String>, s: LibraryUiState): Filtered {
         val scoped = when (scope) {
             PickerScope.All -> all
             is PickerScope.InCollection -> s.collection?.levels?.toHashSet()?.let { m -> all.filter { it.key in m } }.orEmpty()
         }
+        if (all !== haystackEntries) {
+            haystackEntries = all
+            val keys = all.mapTo(HashSet()) { it.key }
+            haystacks.keys.retainAll(keys)
+        }
         val members = s.collections.associate { it.id to it.levels.toHashSet() as Set<LevelKey> }
-        val visible = applyQuery(scoped, s.stats, s.query, searchText, members)
-        val scopedKeys = scoped.mapTo(HashSet()) { it.key }
+        val visible = applyQuery(scoped, s.stats, s.query, descriptions, members) { haystackOf(it, descriptions[it.key]) }
+        return Filtered(visible, facets(scoped), scoped.isEmpty(), scoped.mapTo(HashSet()) { it.key })
+    }
+
+    /** [e]'s search text, built once per version of the entry and its description rather than per keystroke. */
+    private fun haystackOf(e: LibraryEntry, description: String?): String {
+        val cached = haystacks[e.key]
+        if (cached != null && (cached.entry === e || cached.entry == e) && cached.description == description) return cached.text
+        return searchHaystack(e, description).also { haystacks[e.key] = Haystack(e, description, it) }
+    }
+
+    private class Haystack(val entry: LibraryEntry, val description: String?, val text: String)
+
+    private fun show(f: Filtered) {
+        val s = _state.value
+        val visible = f.visible
         val removeTarget = when (scope) {
             is PickerScope.InCollection -> s.collection
             PickerScope.All -> s.query.collections.singleOrNull()?.let { id -> s.collections.firstOrNull { it.id == id } }
@@ -336,10 +397,10 @@ class LibraryViewModel(
         _state.update {
             it.copy(
                 visible = visible,
-                facets = facets(scoped),
-                scopeEmpty = scoped.isEmpty(),
+                facets = f.facets,
+                scopeEmpty = f.scopeEmpty,
                 // Selection follows the scope, not the filters (they're hidden while selecting).
-                selection = it.selection.filterTo(HashSet()) { k -> k in scopedKeys },
+                selection = it.selection.filterTo(HashSet()) { k -> k in f.scopedKeys },
                 removeTarget = removeTarget,
             )
         }
@@ -361,5 +422,8 @@ class LibraryViewModel(
         fun deleteFailed(count: Int) = if (count == 1) DELETE_FAILED else "Couldn't delete $count levels"
         const val COLLECTIONS_SAVE_FAILED = "Couldn't save collections"
         const val COLLECTIONS_RECOVERED = "The collections list was damaged and has been reset"
+
+        /** How many descriptions are read before searches see them. */
+        private const val SEARCH_TEXT_BATCH = 500
     }
 }

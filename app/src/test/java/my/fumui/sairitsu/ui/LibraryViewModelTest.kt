@@ -72,7 +72,7 @@ class LibraryViewModelTest {
 
     private fun test(block: suspend TestScope.() -> Unit) = runTest(dispatcher) { block() }
 
-    private fun TestScope.vm() = LibraryViewModel(library, results, queryStore) { e ->
+    private fun TestScope.vm() = LibraryViewModel(library, results, queryStore, compute = dispatcher) { e ->
         ItemDetails(LevelItem(name = e.name, title = e.title), description = "About ${e.name}")
     }.also { advanceUntilIdle() }
 
@@ -107,8 +107,41 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun setQueryFiltersOffTheCallersThread() = test {
+        val vm = vm()
+        vm.setQuery(LibraryQuery(text = "beta"))
+        // The field shows the text at once; the list follows when the background filtering lands.
+        assertEquals("beta", vm.ui.query.text)
+        assertEquals(listOf("a", "b", "c"), vm.ui.visible.map { it.name })
+        advanceUntilIdle()
+        assertEquals(listOf("b"), vm.ui.visible.map { it.name })
+    }
+
+    @Test
+    fun onlyTheLatestQueryLands() = test {
+        val vm = vm()
+        vm.setQuery(LibraryQuery(text = "alpha"))
+        vm.setQuery(LibraryQuery(text = "gamma"))
+        advanceUntilIdle()
+        assertEquals(listOf("c"), vm.ui.visible.map { it.name })
+    }
+
+    @Test
+    fun searchSeesAnUpdatedEntry() = test {
+        val vm = vm()
+        vm.setQuery(LibraryQuery(text = "alpha"))
+        advanceUntilIdle()
+        assertEquals(listOf("a"), vm.ui.visible.map { it.name })
+        library.index.put(entry("a", title = "Zeta", addedAt = 3))
+        settle { vm.ui.visible.isEmpty() }
+        vm.setQuery(LibraryQuery(text = "zeta"))
+        advanceUntilIdle()
+        assertEquals(listOf("a"), vm.ui.visible.map { it.name })
+    }
+
+    @Test
     fun searchFindsReadingsInTheDescription() = test {
-        val vm = LibraryViewModel(library, results, queryStore) { e ->
+        val vm = LibraryViewModel(library, results, queryStore, compute = dispatcher) { e ->
             val reading = if (e.name == "b") "\n\nプレデター ぷれでたー puredetaa pu redetaa" else ""
             ItemDetails(LevelItem(name = e.name, title = e.title), description = "#AUTHOR:#SEPARATOR_COLON:x$reading")
         }.also { advanceUntilIdle() }
@@ -230,7 +263,7 @@ class LibraryViewModelTest {
         override suspend fun attachReplay(key: LevelKey, at: Long, replay: String) = false
     }
 
-    private fun TestScope.vm(history: RunHistory) = LibraryViewModel(library, results, queryStore, history) { e ->
+    private fun TestScope.vm(history: RunHistory) = LibraryViewModel(library, results, queryStore, history, compute = dispatcher) { e ->
         ItemDetails(LevelItem(name = e.name, title = e.title), description = "About ${e.name}")
     }.also { advanceUntilIdle() }
 

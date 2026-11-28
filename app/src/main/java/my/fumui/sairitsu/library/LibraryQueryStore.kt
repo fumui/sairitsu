@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.net.URI
 
 /** The Play list's last search, filters and sort, so the list looks the same when the user comes back. */
 class LibraryQueryStore(private val store: DataStore<Preferences>) {
@@ -41,7 +42,7 @@ class LibraryQueryStore(private val store: DataStore<Preferences>) {
  * (`file:` URIs, which [my.fumui.sairitsu.data.ServerAddress.resolve] leaves alone), so nothing needs the network.
  */
 fun LibraryEntry.toLevelItem(cache: (String) -> File?): LevelItem {
-    fun srl(key: String?) = key?.let(cache)?.let { Srl(it.toURI().toString()) }
+    fun srl(key: String?) = key?.let(cache)?.let { Srl(it.fileUri()) }
     return LevelItem(
         name = name,
         title = title,
@@ -54,4 +55,13 @@ fun LibraryEntry.toLevelItem(cache: (String) -> File?): LevelItem {
         bgm = srl(resourceKeys[ResourceKind.LEVEL_BGM]),
         preview = srl(previewKey),
     )
+}
+
+/**
+ * The `file:` URI of a regular file, as [File.toURI] gives it but with no disk access: toURI stats the path to see
+ * whether it's a directory, which costs a lot when every row of a large list builds a few of these on the main thread.
+ */
+fun File.fileUri(): String {
+    val path = absolutePath.replace(File.separatorChar, '/')
+    return URI("file", null, if (path.startsWith("/")) path else "/$path", null).toString()
 }

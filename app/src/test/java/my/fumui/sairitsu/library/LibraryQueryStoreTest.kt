@@ -59,6 +59,9 @@ class LibraryQueryStoreTest {
         assertEquals("rush", item.engine?.name)
         val cover = item.cover!!.url!!
         assertTrue(cover.startsWith("file:"))
+        // Built without File.toURI (which stats the path), but the same string.
+        assertEquals(files.getValue("cover").toURI().toString(), cover)
+        assertEquals(File(dir, "missing").toURI().toString(), File(dir, "missing").fileUri())
         assertEquals(cover, ServerAddress.parse("sonolus.sbuga.com")!!.resolve(cover))
         assertTrue(item.bgm!!.url!!.startsWith("file:"))
         assertNull(item.preview)

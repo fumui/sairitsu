@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import my.fumui.sairitsu.library.CollectionCard
 import my.fumui.sairitsu.library.collectionNameError
+import my.fumui.sairitsu.library.fileUri
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -165,7 +166,7 @@ private fun CollectionCardView(
     onDelete: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpen)) {
-        Mosaic(card.coverKeys.mapNotNull { key -> cacheFile(key)?.toURI()?.toString() })
+        Mosaic(card.coverKeys.mapNotNull { key -> cacheFile(key)?.fileUri() })
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(

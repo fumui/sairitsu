@@ -62,6 +62,7 @@ import my.fumui.sairitsu.play.Launchers
 import my.fumui.sairitsu.text.Localizer
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.IdentityHashMap
 
 /**
  * The downloaded-levels picker shared by Play and the collection screens: the top row ([title] and the filter bar, or
@@ -110,7 +111,9 @@ fun LibraryPicker(
     }
     BackHandler(enabled = state.selection.isNotEmpty()) { vm.clearSelection() }
 
-    val items = remember(state.visible) { state.visible.map { it to it.toLevelItem(cacheFile) } }
+    // Each search keystroke brings back mostly the same entries: build each one's row item once, not per keystroke.
+    val itemCache = remember(cacheFile) { IdentityHashMap<LibraryEntry, LevelItem>() }
+    val items = remember(state.visible) { state.visible.map { it to itemCache.getOrPut(it) { it.toLevelItem(cacheFile) } } }
     fun keysOf(levels: List<LevelItem>): List<LevelKey> =
         levels.mapNotNull { level -> items.firstOrNull { it.second === level }?.first?.key }
 

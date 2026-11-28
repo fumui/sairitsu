@@ -65,12 +65,15 @@ fun applyQuery(
     searchText: Map<LevelKey, String> = emptyMap(),
     /** Each collection's members, by collection id. */
     members: Map<String, Set<LevelKey>> = emptyMap(),
+    /** The entry's [searchHaystack]; a caller searching per keystroke passes cached ones instead of rebuilding them. */
+    haystack: (LibraryEntry) -> String = { searchHaystack(it, searchText[it.key]) },
 ): List<LibraryEntry> {
     val words = query.text.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
     val inCollections = query.collections.mapNotNull(members::get)
-    val rating = effectiveRating(query.rating, facets(entries).ratingRange)
+    val bounds = if (entries.isEmpty()) null else RatingRange(entries.minOf { it.rating }, entries.maxOf { it.rating })
+    val rating = effectiveRating(query.rating, bounds)
     val matching = entries.filter { e ->
-        (words.isEmpty() || haystack(e, searchText[e.key]).let { h -> words.all { it in h } }) &&
+        (words.isEmpty() || haystack(e).let { h -> words.all { it in h } }) &&
             (inCollections.isEmpty() || inCollections.any { e.key in it }) &&
             (query.servers.isEmpty() || e.server in query.servers) &&
             (query.engines.isEmpty() || e.engineName in query.engines) &&
@@ -110,9 +113,12 @@ private fun clusterSongs(sorted: List<LibraryEntry>): List<LibraryEntry> {
     return if (songs.size == sorted.size) sorted else songs.values.flatten()
 }
 
-/** Everything a search looks in, lowercased; raw `##LOCALIZE:` texts keep every language. */
-private fun haystack(e: LibraryEntry, extra: String?): String =
-    (listOf(e.title, e.artists, e.author) + e.tags + listOfNotNull(extra)).joinToString("\n").lowercase()
+/**
+ * Everything a search looks in, lowercased: [e]'s texts and its [description]. Raw `##LOCALIZE:` texts keep every
+ * language.
+ */
+fun searchHaystack(e: LibraryEntry, description: String?): String =
+    (listOf(e.title, e.artists, e.author) + e.tags + listOfNotNull(description)).joinToString("\n").lowercase()
 
 /**
  * The saved range, or null (no filter) when it can't be changed or would hide everything for a stale reason: the
