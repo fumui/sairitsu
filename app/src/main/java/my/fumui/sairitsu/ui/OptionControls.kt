@@ -146,7 +146,7 @@ fun RangeControl(
     val step = SearchForms.sliderStep(minOption)
     var dragging by remember(lower, upper) { mutableStateOf(lower.toFloat()..upper.toFloat()) }
     Labeled(
-        "$title ${formatRating(snap(dragging.start, bounds.start, step))} – ${formatRating(snap(dragging.endInclusive, bounds.start, step))}",
+        "$title ${formatRating(sliderValue(minOption, dragging.start))} – ${formatRating(sliderValue(minOption, dragging.endInclusive))}",
         description,
     ) {
         RangeSlider(
@@ -155,7 +155,7 @@ fun RangeControl(
             valueRange = bounds,
             steps = steps(bounds, step),
             onValueChangeFinished = {
-                onChange(snap(dragging.start, bounds.start, step), snap(dragging.endInclusive, bounds.start, step))
+                onChange(sliderValue(minOption, dragging.start), sliderValue(minOption, dragging.endInclusive))
             },
         )
     }
@@ -208,13 +208,13 @@ private fun SliderControl(
     val bounds = (option.min ?: 0.0).toFloat()..(option.max ?: 100.0).toFloat()
     val step = SearchForms.sliderStep(option)
     var dragging by remember(value) { mutableFloatStateOf(value.value.toFloat()) }
-    Labeled("$label ${formatRating(snap(dragging, bounds.start, step))}", description) {
+    Labeled("$label ${formatRating(sliderValue(option, dragging))}", description) {
         Slider(
             value = dragging,
             onValueChange = { dragging = it },
             valueRange = bounds,
             steps = steps(bounds, step),
-            onValueChangeFinished = { onChange(OptionState.Slider(snap(dragging, bounds.start, step))) },
+            onValueChangeFinished = { onChange(OptionState.Slider(sliderValue(option, dragging))) },
         )
     }
 }
@@ -248,5 +248,6 @@ private fun ChipRow(content: @Composable () -> Unit) {
 private fun steps(bounds: ClosedFloatingPointRange<Float>, step: Double): Int =
     (((bounds.endInclusive - bounds.start) / step).roundToInt() - 1).coerceAtLeast(0)
 
-private fun snap(value: Float, min: Float, step: Double): Double =
-    min + ((value - min) / step).roundToInt() * step
+/** The value a slider of [option] commits and shows at drag position [at]: snapped to the option's step. */
+internal fun sliderValue(option: SearchOption, at: Float): Double =
+    StepScale(option.min ?: 0.0, option.max ?: 100.0, SearchForms.sliderStep(option)).snap(at.toDouble())
