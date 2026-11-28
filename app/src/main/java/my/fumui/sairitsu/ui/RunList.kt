@@ -1,29 +1,33 @@
 package my.fumui.sairitsu.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,18 +44,42 @@ import my.fumui.sairitsu.gameplay.RunRecord
 import my.fumui.sairitsu.gameplay.RunSort
 import my.fumui.sairitsu.gameplay.accuracyText
 import my.fumui.sairitsu.gameplay.arcadeText
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private val DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-/** When a run was played, to the minute in [zone] ("2026-11-16 21:04"); "—" for one from before history was kept. */
-internal fun runDateText(at: Long?, zone: ZoneId = ZoneId.systemDefault()): String =
-    at?.let { DATE.format(Instant.ofEpochMilli(it).atZone(zone)) } ?: "—"
+private const val MINUTE_MS = 60_000L
+private const val HOUR_MS = 60 * MINUTE_MS
+private const val DAY_MS = 24 * HOUR_MS
 
-/** Perfect / great / good / miss ("681 / 6 / 0 / 0"). */
-internal fun judgmentText(r: PlayResult): String = "${r.perfect} / ${r.great} / ${r.good} / ${r.miss}"
+/** Days after which a run shows its date instead of "<n>d ago". */
+private const val RELATIVE_DAYS = 28
+
+/**
+ * When a run was played, from [now]: "just now" (under a minute, or a clock set back), "5m ago", "3h ago", "3d ago",
+ * then the date in [zone] from 4 weeks on ("2026-10-02"); "—" for one from before history was kept.
+ */
+internal fun runAgoText(at: Long?, now: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+    if (at == null) return "—"
+    val ago = now - at
+    return when {
+        ago < MINUTE_MS -> "just now"
+        ago < HOUR_MS -> "${ago / MINUTE_MS}m ago"
+        ago < DAY_MS -> "${ago / HOUR_MS}h ago"
+        ago < RELATIVE_DAYS * DAY_MS -> "${ago / DAY_MS}d ago"
+        else -> DAY.format(Instant.ofEpochMilli(at).atZone(zone))
+    }
+}
+
+/** The one score the table shows: the accuracy score when sorting by it, else the arcade score. */
+internal fun runScoreText(r: PlayResult, sort: RunSort): String =
+    if (sort == RunSort.Accuracy) r.accuracyText() else r.arcadeText()
+
+/** The score column's header for [sort]. */
+internal fun runScoreHeader(sort: RunSort): String = if (sort == RunSort.Accuracy) "Accuracy" else "Arcade"
 
 /** What Watch needs to play [run] back; null when no replay was saved for it. */
 internal fun replayRef(run: RunRecord): ReplayRef? =
@@ -62,36 +90,45 @@ private val ACTION_SLOT = 48.dp
 /** Rows shown before "Show all". */
 private const val FIRST_ROWS = 20
 
-/** The selected level's Play runs as a table, with a sort menu; nothing when there are no runs. */
+/** How often the Time column re-reads the clock while it is on screen. */
+private const val CLOCK_TICK_MS = 30_000L
+
+/**
+ * The selected level's Play runs as a table (#, grade, combo, the sorted score, how long ago, replay) with a sort
+ * menu; nothing when there are no runs. A row tap opens the run ([onOpenRun]); its ▶ watches the replay.
+ */
 @Composable
 fun RunList(
     runs: List<RunRecord>,
     sort: RunSort,
     onSort: (RunSort) -> Unit,
     onWatchReplay: (RunRecord) -> Unit,
+    onOpenRun: (RunRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (runs.isEmpty()) return
     var showAll by remember(runs) { mutableStateOf(false) }
+    val now = rememberNow()
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Your runs (${runs.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             RunSortButton(sort, onSort)
         }
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp)) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
-                RunRow("#", "Grade", "Arcade", "Accuracy", "P / Gr / Gd / M", "Combo", "Date", muted)
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                RunRow("#", "Grade", "Combo", runScoreHeader(sort), "Time", muted)
+                HorizontalDivider(Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
                 val shown = if (showAll) runs else runs.take(FIRST_ROWS)
                 shown.forEachIndexed { i, run ->
                     val r = run.result
                     RunRow(
-                        "${i + 1}", r.grade.label, r.arcadeText(), r.accuracyText(), judgmentText(r), "${r.combo}",
-                        runDateText(run.at), Color.Unspecified,
+                        "${i + 1}", r.grade.label, "${r.combo}", runScoreText(r, sort), runAgoText(run.at, now),
+                        Color.Unspecified,
+                        modifier = Modifier.clickable { onOpenRun(run) },
                         action = if (replayRef(run) != null) {
                             {
-                                // Material's 48 dp touch target: rows with a replay are that tall.
+                                // Material's 48 dp touch target; it takes its own taps, so the row doesn't open.
                                 IconButton(onClick = { onWatchReplay(run) }) {
                                     Icon(
                                         Icons.Filled.PlayArrow,
@@ -116,31 +153,42 @@ fun RunList(
     }
 }
 
+/** The wall clock in ms, re-read every [CLOCK_TICK_MS] while composed, so "just now" doesn't stay for an hour. */
+@Composable
+private fun rememberNow(): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(CLOCK_TICK_MS)
+            now = System.currentTimeMillis()
+        }
+    }
+    return now
+}
+
 @Composable
 private fun RunRow(
     rank: String,
     grade: String,
-    arcade: String,
-    accuracy: String,
-    judgments: String,
     combo: String,
-    date: String,
+    score: String,
+    time: String,
     color: Color,
+    modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        // Every row as tall as the ▶ slot (Material's 48 dp touch target), with or without a replay.
+        modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp).heightIn(min = ACTION_SLOT),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cell(rank, 0.35f, style, color, TextAlign.End)
         Cell(grade, 1.1f, style, color, TextAlign.Start)
-        Cell(arcade, 1f, style, color, TextAlign.End)
-        Cell(accuracy, 1.1f, style, color, TextAlign.End)
-        Cell(judgments, 1.5f, style, color, TextAlign.End)
         Cell(combo, 0.6f, style, color, TextAlign.End)
-        Cell(date, 1.5f, style, color, TextAlign.End)
+        Cell(score, 1f, style, color, TextAlign.End)
+        Cell(time, 1f, style, color, TextAlign.End)
         Box(Modifier.width(ACTION_SLOT), contentAlignment = Alignment.Center) { action?.invoke() }
     }
 }
