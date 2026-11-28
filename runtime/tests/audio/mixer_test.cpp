@@ -323,7 +323,7 @@ TEST_CASE("a positive bgm offset skips into the bgm") {
     Mixer m(kRate);
     m.set_bgm(clip_of(30000, [](size_t i) { return float(i + 1) * 1e-6f; }), 0.25);
     m.start(30000);
-    const auto out = render(m, 48000);
+    const auto out = render(m, 48001);
     CHECK(out[30000 - 12000 - 1] == 0.0f);
     CHECK(out[30000 - 12000] == 1e-6f);                   // BGM sample 0 at music time -0.25
     CHECK(out[30000] == float(12000 + 1) * 1e-6f);        // music time 0 plays BGM time 0.25
