@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -40,8 +40,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +60,9 @@ import my.fumui.sairitsu.data.model.LevelItem
 import my.fumui.sairitsu.gameplay.GameplayActivity
 import my.fumui.sairitsu.gameplay.GameplayIntent
 import my.fumui.sairitsu.gameplay.GameplayMode
+import my.fumui.sairitsu.gameplay.ReplaySave
+import my.fumui.sairitsu.gameplay.ResultScreen
+import my.fumui.sairitsu.gameplay.RunRecord
 import my.fumui.sairitsu.gameplay.arcadeText
 import my.fumui.sairitsu.library.LibraryEntry
 import my.fumui.sairitsu.library.collectionNameError
@@ -178,6 +188,38 @@ fun LibraryPicker(
                 Box(Modifier.weight(0.62f).fillMaxHeight()) {
                     if (entry != null) {
                         val level = items.firstOrNull { it.first.key == entry.key }?.second ?: entry.toLevelItem(cacheFile)
+                        // The past run whose result is open; a RunRecord isn't Bundle-saveable, and the app is
+                        // landscape-only, so remember is enough. Another level closes it.
+                        var reviewing by remember(entry.key) { mutableStateOf<RunRecord?>(null) }
+                        fun watch(run: RunRecord) {
+                            val ref = replayRef(run) ?: return
+                            val server = ServerAddress.parse(entry.serverUrl) ?: return
+                            val intent = Intent(context, GameplayActivity::class.java)
+                            GameplayIntent.extras(server, level.name, GameplayMode.Watch, level.engine?.name, replay = ref)
+                                .forEach { (key, value) -> intent.putExtra(key, value) }
+                            context.startActivity(intent)
+                        }
+                        reviewing?.let { run ->
+                            Dialog(
+                                onDismissRequest = { reviewing = null },
+                                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                            ) {
+                                HideDialogSystemBars()
+                                ResultScreen(
+                                    run.result, partial = false, info = null, level = level, timing = null,
+                                    replaySave = ReplaySave.Unavailable, onSaveReplay = {}, onRetry = null,
+                                    onBack = { reviewing = null },
+                                    onWatchReplay = if (replayRef(run) != null) {
+                                        {
+                                            reviewing = null
+                                            watch(run)
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                        }
                         DetailsPane(
                             selected = level,
                             details = state.details,
@@ -218,16 +260,8 @@ fun LibraryPicker(
                                     state.runs,
                                     state.runSort,
                                     vm::setRunSort,
-                                    onWatchReplay = { run ->
-                                        val ref = replayRef(run)
-                                        val server = ServerAddress.parse(entry.serverUrl)
-                                        if (ref != null && server != null) {
-                                            val intent = Intent(context, GameplayActivity::class.java)
-                                            GameplayIntent.extras(server, level.name, GameplayMode.Watch, level.engine?.name, replay = ref)
-                                                .forEach { (key, value) -> intent.putExtra(key, value) }
-                                            context.startActivity(intent)
-                                        }
-                                    },
+                                    onWatchReplay = ::watch,
+                                    onOpenRun = { reviewing = it },
                                     modifier = Modifier.padding(top = 16.dp),
                                 )
                             },
@@ -296,5 +330,18 @@ fun LibraryPicker(
             },
             dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** A dialog is its own window: hide its system bars as [my.fumui.sairitsu.MainActivity] does for the app's. */
+@Composable
+private fun HideDialogSystemBars() {
+    val view = LocalView.current
+    LaunchedEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return@LaunchedEffect
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 }

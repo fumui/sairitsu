@@ -84,7 +84,8 @@ private val ResultTabLabels = listOf("Score", "Timing")
  * when null) beside two tabs. Score has the grade ("Quit" for a [partial] run), the arcade score with its difference
  * from the previous best, the accuracy score and combo, and the judgments as a bar and one row each. Timing has the
  * run's [timing]; without timed hits there are no tabs, only the score. Retry and Back (the system Back too) work from
- * the first frame; the content fades in and the score counts up.
+ * the first frame; the content fades in and the score counts up. A past run opened from the run table is shown with
+ * no [onRetry] (no Retry button) and, when it has a replay, [onWatchReplay] (a Watch replay button).
  */
 @Composable
 fun ResultScreen(
@@ -95,8 +96,9 @@ fun ResultScreen(
     timing: TimingUi?,
     replaySave: ReplaySave,
     onSaveReplay: () -> Unit,
-    onRetry: () -> Unit,
+    onRetry: (() -> Unit)?,
     onBack: () -> Unit,
+    onWatchReplay: (() -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     Box(
@@ -152,7 +154,8 @@ fun ResultScreen(
             }
             Row(Modifier.align(Alignment.BottomEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SaveReplayButton(replaySave, onSaveReplay)
-                Button(onClick = onRetry) { Text("Retry") }
+                if (onWatchReplay != null) OutlinedButton(onClick = onWatchReplay) { Text("Watch replay") }
+                if (onRetry != null) Button(onClick = onRetry) { Text("Retry") }
                 OutlinedButton(onClick = onBack) { Text("Back") }
             }
         }
