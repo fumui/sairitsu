@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import my.fumui.sairitsu.gameplay.PlayResult
 import my.fumui.sairitsu.gameplay.ReplayRef
@@ -85,7 +86,8 @@ internal fun runScoreHeader(sort: RunSort): String = if (sort == RunSort.Accurac
 internal fun replayRef(run: RunRecord): ReplayRef? =
     run.replay?.let { ReplayRef(it, run.levelData, run.engine) }
 
-private val ACTION_SLOT = 48.dp
+/** The ▶ slot's width and a data row's height: compact, since a tap anywhere else on the row opens the run. */
+private val ACTION_SLOT = 40.dp
 
 /** Rows shown before "Show all". */
 private const val FIRST_ROWS = 20
@@ -117,7 +119,7 @@ fun RunList(
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp)) {
             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
-                RunRow("#", "Grade", "Combo", runScoreHeader(sort), "Time", muted)
+                RunRow("#", "Grade", "Combo", runScoreHeader(sort), "Time", muted, minHeight = 0.dp)
                 HorizontalDivider(Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
                 val shown = if (showAll) runs else runs.take(FIRST_ROWS)
                 shown.forEachIndexed { i, run ->
@@ -128,8 +130,8 @@ fun RunList(
                         modifier = Modifier.clickable { onOpenRun(run) },
                         action = if (replayRef(run) != null) {
                             {
-                                // Material's 48 dp touch target; it takes its own taps, so the row doesn't open.
-                                IconButton(onClick = { onWatchReplay(run) }) {
+                                // It takes its own taps, so the row doesn't open.
+                                IconButton(onClick = { onWatchReplay(run) }, modifier = Modifier.size(ACTION_SLOT)) {
                                     Icon(
                                         Icons.Filled.PlayArrow,
                                         contentDescription = "Watch replay",
@@ -175,12 +177,13 @@ private fun RunRow(
     time: String,
     color: Color,
     modifier: Modifier = Modifier,
+    minHeight: Dp = ACTION_SLOT,
     action: (@Composable () -> Unit)? = null,
 ) {
     val style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
     Row(
-        // Every row as tall as the ▶ slot (Material's 48 dp touch target), with or without a replay.
-        modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp).heightIn(min = ACTION_SLOT),
+        // Data rows are as tall as the ▶ slot, with or without a replay, so a mixed list stays even.
+        modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 1.dp).heightIn(min = minHeight),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
