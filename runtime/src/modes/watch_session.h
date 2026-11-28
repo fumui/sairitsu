@@ -84,7 +84,7 @@ public:
     // The level's end (in step()): a frame at or past the end time runs nothing, and its output is empty with
     // `ended` set. Watch then loops: the driver steps on from time -kPreRoll with `skip` set, which the
     // lifetime system handles like any time jump (entities out of range run terminate, preprocess is not re-run).
-    // Music time at which the level ends: bgmOffset + the BGM's length, or without a readable length the latest
+    // Music time at which the level ends: the BGM's length - bgmOffset, or without a readable length the latest
     // despawn time plus 1 s.
     float end_time() const override;
     // The audio commands preparation scheduled (the first frame's output holds them once). Watch replays

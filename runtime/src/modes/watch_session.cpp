@@ -184,9 +184,9 @@ std::unique_ptr<WatchSession> WatchSession::create(const data::LoadedLevel& leve
         std::move(archetypes), std::move(archetype_of), watch.update_spawn, config));
     session->replay_ = config.replay;
     if (config.replay != nullptr) session->core_.streams.load(config.replay->streams);
-    // BGM sample 0 plays at music time bgmOffset (the end rule is in step()).
+    // BGM sample 0 plays at music time -bgmOffset (the end rule is in step()).
     if (const auto length = audio::bgm_length(level.bgm, level.bgm_pcm))
-        session->bgm_end_ = float(double(level.level.bgm_offset) + *length);
+        session->bgm_end_ = float(*length - double(level.level.bgm_offset));
     return session;
 }
 
@@ -316,8 +316,8 @@ float WatchSession::end_time() const { return bgm_end_ ? *bgm_end_ : last_despaw
 
 const FrameOutput& WatchSession::step(const time::FrameTime& t) {
     if (!begin_frame()) return core_.frame;
-    // Watch ends on the first frame whose time reaches bgmOffset + the BGM's
-    // length, before any system runs, so that frame draws nothing; it then skips to
+    // Watch ends on the first frame whose time reaches the BGM's length -
+    // bgmOffset, before any system runs, so that frame draws nothing; it then skips to
     // music time -2 s and plays on (a loop), without re-running preprocess or terminating the entities the skip's
     // lifetime system keeps.
     // Without a readable BGM length the end is the latest despawn time plus 1 s.

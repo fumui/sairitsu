@@ -318,24 +318,28 @@ TEST_CASE("looped clip stopped before it starts never plays") {
     CHECK(onsets(render(m, 12000)) == 0);
 }
 
-TEST_CASE("bgm offset shifts start") {
+// bgmOffset is the BGM time at music time 0, so BGM sample 0 plays at music time -bgmOffset. Sekai Viewer levels use it to skip the silent lead-in of the song file (issue #1).
+TEST_CASE("a positive bgm offset skips into the bgm") {
     Mixer m(kRate);
-    m.set_bgm(constant(100, 0.25f), 0.25);
-    m.start(500);
-    const auto out = render(m, 13000);
-    CHECK(out[500 + 12000 - 1] == 0.0f);
-    CHECK(out[500 + 12000] == 0.25f);
-    CHECK(out[500 + 12099] == 0.25f);
-    CHECK(out[500 + 12100] == 0.0f);
+    m.set_bgm(clip_of(30000, [](size_t i) { return float(i + 1) * 1e-6f; }), 0.25);
+    m.start(30000);
+    const auto out = render(m, 48000);
+    CHECK(out[30000 - 12000 - 1] == 0.0f);
+    CHECK(out[30000 - 12000] == 1e-6f);                   // BGM sample 0 at music time -0.25
+    CHECK(out[30000] == float(12000 + 1) * 1e-6f);        // music time 0 plays BGM time 0.25
+    CHECK(out[30000 + 17999] == float(30000) * 1e-6f);    // the last sample
+    CHECK(out[30000 + 18000] == 0.0f);
 }
 
-TEST_CASE("bgm with a negative offset starts before music time zero") {
+TEST_CASE("a negative bgm offset starts the bgm after music time zero") {
     Mixer m(kRate);
     m.set_bgm(constant(100, 0.25f), -0.5);
-    m.start(30000);
-    const auto out = render(m, 7000);
-    CHECK(out[30000 - 24000 - 1] == 0.0f);
-    CHECK(out[30000 - 24000] == 0.25f);
+    m.start(500);
+    const auto out = render(m, 25000);
+    CHECK(out[500 + 24000 - 1] == 0.0f);
+    CHECK(out[500 + 24000] == 0.25f);
+    CHECK(out[500 + 24099] == 0.25f);
+    CHECK(out[500 + 24100] == 0.0f);
 }
 
 TEST_CASE("volumes scale") {

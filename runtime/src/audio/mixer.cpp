@@ -312,8 +312,9 @@ void Mixer::mix(float* out, int64_t from, int32_t frames) {
         if (v.used) mix_voice(v, from, frames, out);
     for (int32_t i = 0; i < frames * 2; ++i) out[i] *= effect;
 
-    // BGM sample 0 plays at music time bgm_offset (pre-roll and offset sign share music_to_frame).
-    const int64_t bgm_start = audio_to_frame(bgm_offset_);
+    // BGM sample 0 plays at music time -bgm_offset: bgmOffset is the BGM time at music time 0 (pre-roll and offset
+    // sign share music_to_frame).
+    const int64_t bgm_start = audio_to_frame(-bgm_offset_);
     const int64_t bgm_length = int64_t(bgm_.frames());
     const int64_t first = std::max(from, bgm_start), last = std::min(from + frames, bgm_start + bgm_length);
     for (int64_t n = first; n < last; ++n) {

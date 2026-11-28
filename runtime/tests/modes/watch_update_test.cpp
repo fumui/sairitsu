@@ -181,12 +181,12 @@ TEST_CASE("entity spawns and despawns by range") {
 }
 
 TEST_CASE("watch ends at the BGM end") {
-    // Watch ends on the first frame at or past bgmOffset + the BGM's length; that frame
-    // runs no system and draws nothing; then it loops from -2 s with a skip, and only the lifetime system's usual
-    // rule terminates entities (no terminate-everything at the end, no second preprocess).
+    // Watch ends on the first frame at or past the BGM's length - bgmOffset (bgmOffset is the BGM time at music
+    // time 0); that frame runs no system and draws nothing; then it loops from -2 s with a skip, and only the
+    // lifetime system's usual rule terminates entities (no terminate-everything at the end, no second preprocess).
     data::LoadedLevel level = test::engine_fixture("spawn_basic");
     level.bgm = wav(2.0);
-    level.level.bgm_offset = 0.5f;
+    level.level.bgm_offset = -0.5f;
     auto session = prepared(level);
     CHECK(session->end_time() == 2.5f);
     const FrameOutput& before = step(*session, 2.5f - 1.0f / 64);  // entity 1 ([2, 3.25)) is active

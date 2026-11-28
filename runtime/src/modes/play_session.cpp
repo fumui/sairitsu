@@ -156,9 +156,9 @@ std::unique_ptr<PlaySession> PlaySession::create(const data::LoadedLevel& level,
     std::unique_ptr<PlaySession> session(new PlaySession(std::move(program), mc, std::move(memory), std::move(times),
                                                           build_resource_maps(level, play), std::move(archetypes),
                                                           std::move(archetype_of), config));
-    // End_time() is the BGM end, as in Watch .
+    // end_time() is the BGM end, as in Watch: clip length - bgmOffset (bgmOffset is the BGM time at music time 0).
     if (const auto length = audio::bgm_length(level.bgm, level.bgm_pcm))
-        session->bgm_end_ = float(double(level.level.bgm_offset) + *length);
+        session->bgm_end_ = float(*length - double(level.level.bgm_offset));
     return session;
 }
 

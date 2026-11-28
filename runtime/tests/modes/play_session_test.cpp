@@ -324,6 +324,18 @@ TEST_CASE("play ends one second after the last input despawns") {
     CHECK(session->ended());
 }
 
+TEST_CASE("play's bgm end is the bgm length minus bgmOffset") {
+    // bgmOffset is the BGM time at music time 0, so the BGM ends at music time (clip length - bgmOffset) / speed.
+    test::NodeBuilder b;
+    b.entry(b("Set", kEntityDespawn, 0, 1), CallbackKind::UpdateParallel, "N");
+    data::LoadedLevel level = make_level(b, {{"N", {}}});
+    level.bgm_pcm.rate = 8000, level.bgm_pcm.channels = 1;
+    level.bgm_pcm.samples.assign(16000, 0.0f);  // 2 s
+    level.level.bgm_offset = 0.5f;
+    auto session = prepared(level);
+    CHECK(session->end_time() == 1.5f);
+}
+
 TEST_CASE("play restart returns to the post-preparation state") {
     test::NodeBuilder b;
     b.entry(b("Execute", b("Set", kEntityInput, 0, 1), b("Set", kEntityDespawn, 0, b("Equal", b("Get", kRuntimeUpdate, 0), 2)),

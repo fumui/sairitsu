@@ -24,7 +24,7 @@ Pcm effect_clip(const Pcm& decoded, int32_t rate);
 //
 // Times. A command's time is a music time in seconds; the output frame it lands on is
 // `frame_at_music_zero + round((t + audio_offset) * rate)` (the offset's sign is set in `music_to_frame` / `frame_to_music`).
-// BGM sample 0 is at music time `bgm_offset`. A command that arrives after its frame has been rendered plays from the
+// BGM sample 0 is at music time `-bgm_offset` (music time t plays BGM time t + bgm_offset). A command that arrives after its frame has been rendered plays from the
 // right offset into the clip: it joins the mix as if it had started on time.
 class Mixer {
 public:
@@ -41,7 +41,7 @@ public:
     // level.
     void start(int64_t frame_at_music_zero);
 
-    // A loop: music time `music` becomes output frame `frame` from now on (so the BGM starts over `bgm_offset -
+    // A loop: music time `music` becomes output frame `frame` from now on (so the BGM starts over `-bgm_offset -
     // music` seconds after it), the pending scheduled clips and the distance history are forgotten, and commands
     // submitted after this call play against the new mapping. Voices already playing run on to their end (a clip's
     // tail is not cut), because they hold absolute output frames. Call it from the producer thread with nothing
