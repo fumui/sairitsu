@@ -3,11 +3,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "data/load_error.h"
 #include "doctest.h"
 #include "modes/replay.h"
+#include "support/archive.h"
 #include "support/engine_fixture.h"
 
 using namespace sr;
@@ -16,6 +18,16 @@ namespace {
 
 std::vector<uint8_t> replay_fixture(const char* name) {
     return test::read_fixture_file(std::filesystem::path(SR_TEST_FIXTURES) / "replay" / name);
+}
+
+// A minimal gzipped replay: two inputs with these entityIndex deltas, a 100 px high play area `width` wide.
+std::vector<uint8_t> small_replay(const std::string& entity_deltas, int width = 160) {
+    return test::make_gzip(R"({"duration":1,"playArea":{"width":)" + std::to_string(width) +
+                           R"(,"height":100},"result":{"grade":"pass","arcadeScore":0,"accuracyScore":0,"combo":0,)"
+                           R"("perfect":0,"great":0,"good":0,"miss":0,"totalCount":0},)"
+                           R"("inputs":{"entityIndex":[)" + entity_deltas +
+                           R"(],"time":[0,0],"judgment":[0,0],"accuracy":[0,0]},)"
+                           R"("touches":{"l":[],"t":[],"x":[],"y":[]},"entities":[],"streams":[]})");
 }
 
 }  // namespace
@@ -119,4 +131,22 @@ TEST_CASE("a truncated replay throws LoadError") {
     std::vector<uint8_t> bytes = replay_fixture("benchmark-replaydata");
     bytes.resize(100);
     CHECK_THROWS_AS(modes::parse_replay(bytes), data::LoadError);
+}
+
+TEST_CASE("replay entity indices are running sums") {
+    const modes::Replay r = modes::parse_replay(small_replay("5,-2"));
+    REQUIRE(r.inputs.size() == 2);
+    CHECK(r.inputs[0].entity == 5);
+    CHECK(r.inputs[1].entity == 3);
+}
+
+TEST_CASE("a replay whose entity index sum leaves int32 throws LoadError") {
+    CHECK_THROWS_AS(modes::parse_replay(small_replay("2147483647,1")), data::LoadError);
+    CHECK_THROWS_AS(modes::parse_replay(small_replay("-2147483648,-1")), data::LoadError);
+}
+
+TEST_CASE("a replay without a positive play-area width throws LoadError") {
+    CHECK_NOTHROW(modes::parse_replay(small_replay("0,0", 1)));
+    CHECK_THROWS_AS(modes::parse_replay(small_replay("0,0", 0)), data::LoadError);
+    CHECK_THROWS_AS(modes::parse_replay(small_replay("0,0", -160)), data::LoadError);
 }

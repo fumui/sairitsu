@@ -1,6 +1,7 @@
 #include "modes/replay.h"
 
 #include <cstddef>
+#include <cstdint>
 
 #include "data/gzip.h"
 #include "data/json.h"
@@ -33,6 +34,7 @@ Replay parse_replay(std::span<const uint8_t> file) {
     r.input_offset = root.opt_number("inputOffset").value_or(0.0f);
     const JsonValue area = root.field("playArea");
     r.width = area.integer("width");
+    if (r.width <= 0) area.field("width").fail("expected a positive width");
     r.height = area.integer("height");
     if (r.height <= 0) area.field("height").fail("expected a positive height");
 
@@ -56,12 +58,13 @@ Replay parse_replay(std::span<const uint8_t> file) {
     const std::vector<JsonValue> judgment = expect_size(in, "judgment", n);
     const std::vector<JsonValue> accuracy = expect_size(in, "accuracy", n);
     r.inputs.reserve(n);
-    int32_t entity_sum = 0;
+    int64_t entity_sum = 0;  // two int32 deltas never overflow it; a sum outside int32 is refused
     float time_sum = 0;
     for (size_t i = 0; i < n; ++i) {
         entity_sum += entity[i].integer();
+        if (entity_sum < INT32_MIN || entity_sum > INT32_MAX) entity[i].fail("entity index sum out of range");
         time_sum += time[i].number();
-        r.inputs.push_back({entity_sum, time_sum, judgment[i].number(), accuracy[i].number()});
+        r.inputs.push_back({int32_t(entity_sum), time_sum, judgment[i].number(), accuracy[i].number()});
     }
 
     // Touch i takes l[i] points; t (ms of Play time, input offset removed), x and y (integer pixels from the
